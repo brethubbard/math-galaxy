@@ -138,8 +138,15 @@ export class VoskMic {
   }
 
   _emit(text, isFinal) {
-    if (!text || this.muted || !this.onHeard) return;
-    this.onHeard(extractCandidates(text), String(text).trim(), isFinal);
+    if (this.muted || !this.onHeard) return;
+    const raw = String(text || '').trim();
+    if (!raw) return; // pure silence — ignore so it can't trip the keypad nudge
+    // Strip Vosk's "[unk]" unknown-token so it never reaches the UI or parser.
+    const clean = raw.replace(/\[unk\]/g, ' ').replace(/\s+/g, ' ').trim();
+    // Ignore "[unk]" partials, but DO emit an "[unk]" final (clean is empty) so the
+    // app can show a friendly "didn't catch that" and count the missed attempt.
+    if (!clean && !isFinal) return;
+    this.onHeard(extractCandidates(clean), clean, isFinal);
   }
 
   mute() { this.muted = true; }
