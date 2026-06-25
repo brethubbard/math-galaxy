@@ -9,7 +9,9 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 const state = {
   save: null,
-  mic: null,
+  mic: null,        // the ACTIVE mic engine (points at webMic or voskMic)
+  webMic: null,     // Web Speech API engine (fast default)
+  voskMic: null,    // on-device Vosk engine (Accuracy mode), lazy-loaded
   screen: 'home',
   play: null,
   audioCtx: null,
@@ -22,8 +24,9 @@ const state = {
 function boot() {
   startStarfield();
   state.save = E.loadSave();
-  state.mic = micSupported ? new Mic() : null;
-  if (state.mic) wireMic();
+  state.webMic = micSupported ? new Mic() : null;
+  state.mic = state.webMic;
+  if (state.webMic) wireMic(state.webMic);
 
   bindGlobal();
   bindHome();
@@ -183,7 +186,7 @@ function bindPlay() {
   });
 }
 
-function startPlay(mode) {
+async function startPlay(mode) {
   const planetId = state.currentPlanet;
   state.play = {
     mode, planetId,
@@ -203,11 +206,55 @@ function startPlay(mode) {
 
   showScreen('play');
   requestWakeLock(); // keep the screen on while playing (kids pause to think)
+  await ensureEngine();          // pick Web Speech or Vosk (lazy-loads Vosk if needed)
   if (micEnabled()) state.mic.start();
   nextQuestion();
 }
 
-function micEnabled() { return state.mic && state.save.settings.useMic && micSupported; }
+// Point state.mic at the engine the settings ask for, lazy-loading Vosk on demand.
+async function ensureEngine() {
+  const wantVosk = state.save.settings.engine === 'vosk';
+  if (wantVosk) {
+    if (!state.voskMic) {
+      try {
+        const mod = await import('./vosk-engine.js');
+        state.voskMic = new mod.VoskMic();
+        wireMic(state.voskMic);
+      } catch (_) { state.save.settings.engine = 'web'; E.persist(state.save); }
+    }
+    if (state.voskMic) { state.mic = state.voskMic; return; }
+  }
+  state.mic = state.webMic;
+}
+
+function engineSupported() {
+  return state.save.settings.engine === 'vosk'
+    ? !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    : micSupported;
+}
+
+// Switch voice engines from Settings. Switching to Vosk kicks off the one-time
+// model download right away so it's ready (not stalling) at the first question.
+async function setEngine(engine) {
+  state.save.settings.engine = engine;
+  E.persist(state.save);
+  const note = $('#engine-note');
+  if (engine !== 'vosk') { state.mic = state.webMic; return; }
+  try {
+    if (note) note.innerHTML = '⬇️ Downloading the voice pack… <small>(one-time, ~40&nbsp;MB)</small>';
+    const mod = await import('./vosk-engine.js');
+    if (!state.voskMic) { state.voskMic = new mod.VoskMic(); wireMic(state.voskMic); }
+    const ok = await state.voskMic.preload();
+    if (note) note.innerHTML = ok
+      ? '✅ Accuracy mode ready! It now works offline too.'
+      : '⚠️ Couldn\'t load the voice pack (is models/ present and online?). Falling back to the standard voice.';
+    if (!ok) { state.save.settings.engine = 'web'; E.persist(state.save); $('#set-engine').checked = false; }
+  } catch (_) {
+    if (note) note.textContent = '⚠️ Accuracy mode unavailable here — using the standard voice.';
+    state.save.settings.engine = 'web'; E.persist(state.save); $('#set-engine').checked = false;
+  }
+}
+function micEnabled() { return state.mic && state.save.settings.useMic && engineSupported(); }
 
 // ---- Screen Wake Lock: stop the device dimming/sleeping mid-problem ----
 async function requestWakeLock() {
@@ -293,9 +340,9 @@ function onKey(k) {
   $('#answer-slot').classList.toggle('filled', play.answerStr !== '');
 }
 
-// ---- input: mic ----
-function wireMic() {
-  state.mic.onHeard = (candidates, transcript, isFinal) => {
+// ---- input: mic ---- (wires whichever engine is passed: Web Speech or Vosk)
+function wireMic(mic) {
+  mic.onHeard = (candidates, transcript, isFinal) => {
     const play = state.play;
     if (!play || play.locked || state.screen !== 'play') return;
 
@@ -314,19 +361,28 @@ function wireMic() {
       }
     }
   };
-  state.mic.onState = (st, detail) => {
-    if (st === 'listening') $('#mic-btn').classList.add('listening');
+  mic.onState = (st, detail) => {
+    if (st === 'loading') {
+      $('#mic-btn').classList.remove('listening');
+      $('#heard').innerHTML = '🛰️ Loading the smart voice model… <small>(one-time, may take a bit)</small>';
+    }
+    if (st === 'listening') { $('#mic-btn').classList.remove('off'); $('#mic-btn').classList.add('listening'); }
     if (st === 'idle' || st === 'error') $('#mic-btn').classList.remove('listening');
     if (st === 'error' && detail === 'denied') {
       state.save.settings.useMic = false; E.persist(state.save);
       $('#mic-btn').classList.add('off');
       $('#heard').textContent = 'Mic is off — just tap your answers! 👇';
     }
+    if (st === 'error' && detail === 'load') {
+      // Vosk model couldn't load — fall back to the Web Speech engine.
+      $('#heard').innerHTML = '⚠️ Couldn\'t load the smart voice — using the regular one. Tap answers any time 👇';
+      if (state.save.settings.engine === 'vosk') { state.save.settings.engine = 'web'; E.persist(state.save); }
+    }
   };
 }
 
 function toggleMic() {
-  if (!micSupported) return;
+  if (!state.mic || !engineSupported()) return;
   if (!state.mic.listening) { state.mic.start(); $('#mic-btn').classList.remove('off'); }
   else { state.mic.stop(); }
 }
@@ -567,7 +623,16 @@ function renderSettings() {
         ? '⚠️ This browser can\'t speak. Sound effects still work.'
         : '⚠️ No speech voices are installed on this computer, so questions can\'t be read aloud. On Linux, install a voice engine (e.g. "sudo apt install speech-dispatcher espeak-ng") and restart your browser. Sound effects still work.');
 
+  // Accuracy mode (on-device Vosk engine)
+  const voskOk = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  $('#set-engine').checked = s.engine === 'vosk';
+  $('#set-engine').disabled = !voskOk;
+  $('#engine-note').innerHTML = voskOk
+    ? 'Hears spoken numbers more accurately by listening for number words only. First use downloads a ~40&nbsp;MB voice pack (then works offline). A little slower than the standard voice.'
+    : '⚠️ This browser can\'t run the on-device voice.';
+
   $('#set-mic').onchange = (e) => { state.save.settings.useMic = e.target.checked; E.persist(state.save); };
+  $('#set-engine').onchange = (e) => { setEngine(e.target.checked ? 'vosk' : 'web'); };
   $('#set-voice').onchange = (e) => { state.save.settings.voicePrompts = e.target.checked; E.persist(state.save); };
   $('#set-sound').onchange = (e) => { state.save.settings.sound = e.target.checked; E.persist(state.save); };
   $('#set-name').onchange = (e) => { state.save.name = e.target.value.trim() || 'Space Pilot'; E.persist(state.save); };

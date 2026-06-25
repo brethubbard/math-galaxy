@@ -120,6 +120,23 @@ and a high success rate (you mostly see facts you're winning at).
   auto-marks you wrong from a mishear. Wrong answers are committed deliberately via the keypad.
 - After ~2 mic misfires on a question, the keypad gently pulses so a child is never stuck.
 
+### Accuracy mode (on-device Vosk) — optional, more accurate
+There's a second speech engine behind **Settings → 🎯 Accuracy mode**: a small
+[Vosk](https://alphacephei.com/vosk/) model that runs **entirely in the browser** (WebAssembly),
+with recognition **constrained to number words only**. That constraint is what fixes the classic
+"thirteen vs thirty" confusion — the recognizer only has ~30 number-words to choose from instead
+of the whole language. It's also **private** (audio never leaves the device) and, once cached,
+**works offline**. Trade-off: a one-time ~40 MB model download and a touch more latency than the
+cloud Web Speech engine. The Web Speech engine stays the default; the keypad is always there.
+
+**Enable it:**
+```bash
+./scripts/get-vosk-model.sh     # downloads + packages the model into models/ (~40 MB)
+```
+Then commit `models/` (GitHub Pages serves it), open **Settings → Accuracy mode**, and reload.
+The engine (`js/vosk-engine.js`) is lazy-loaded — none of this downloads unless a user opts in.
+To host the model elsewhere instead of committing it, change `VOSK_MODEL_URL` in `js/vosk-engine.js`.
+
 ### Whimsy & game feel
 Animated starfield, a floating rocket mascot, confetti on fast/mastered answers, a streak
 flame 🔥, XP ranks, collectible **buddies** for each planet cleared, synth sound effects, and
@@ -135,6 +152,7 @@ styles.css      space theme, animations, responsive (mobile-first)
 js/levels.js    the 10 planets + commutative fact generation
 js/engine.js    Leitner spaced repetition, mastery gating, XP, localStorage save
 js/speech.js    Web Speech API wrapper + text-to-speech (with mic-muting while it talks)
+js/vosk-engine.js  optional on-device Vosk engine (Accuracy mode), lazy-loaded
 js/numbers.js   spoken-number → integer normalization (+ homophone map)
 js/app.js       UI controller wiring it all together
 ```
