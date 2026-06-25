@@ -13,6 +13,7 @@ const state = {
   screen: 'home',
   play: null,
   audioCtx: null,
+  wakeLock: null,
 };
 
 // ===========================================================================
@@ -201,11 +202,31 @@ function startPlay(mode) {
   updateXpBar();
 
   showScreen('play');
+  requestWakeLock(); // keep the screen on while playing (kids pause to think)
   if (micEnabled()) state.mic.start();
   nextQuestion();
 }
 
 function micEnabled() { return state.mic && state.save.settings.useMic && micSupported; }
+
+// ---- Screen Wake Lock: stop the device dimming/sleeping mid-problem ----
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator) || state.wakeLock) return;
+  try {
+    state.wakeLock = await navigator.wakeLock.request('screen');
+    // The lock is auto-dropped if it gets released (e.g. tab hidden); track that.
+    state.wakeLock.addEventListener('release', () => { state.wakeLock = null; });
+  } catch (_) { /* not allowed / unsupported — harmless */ }
+}
+async function releaseWakeLock() {
+  try { await state.wakeLock?.release(); } catch (_) {}
+  state.wakeLock = null;
+}
+// The OS releases the lock when the page is backgrounded; re-acquire on return
+// if we're still in the middle of playing.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.screen === 'play') requestWakeLock();
+});
 
 function buildDots(n) {
   const dots = $('#test-dots');
@@ -384,6 +405,7 @@ function markDot(i, cls) {
 
 function endPlay() {
   if (state.mic) state.mic.stop();
+  releaseWakeLock();
   try { speechSynthesis.cancel(); } catch (_) {}
   state.play = null;
   navTo('map');
@@ -393,6 +415,7 @@ function endPlay() {
 function finishTest() {
   const play = state.play;
   if (state.mic) state.mic.stop();
+  releaseWakeLock();
   const grade = E.gradeTest(state.save, play.planetId, play.test.results);
   E.persist(state.save);
   showResult(grade, play.planetId);
@@ -402,6 +425,7 @@ function finishTest() {
 function finishPractice() {
   const play = state.play;
   if (state.mic) state.mic.stop();
+  releaseWakeLock();
   const { count, correct } = play.practice;
   const acc = count ? Math.round((correct / count) * 100) : 0;
   state.play = null;
