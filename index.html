@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0b1026" />
+  <title>Math Galaxy 🚀 — Times Table Adventure</title>
+  <meta name="description" content="A whimsy-filled space adventure for mastering multiplication facts — practice and test by voice or tap." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- animated starfield -->
+  <canvas id="stars" aria-hidden="true"></canvas>
+  <!-- celebration confetti -->
+  <canvas id="confetti" aria-hidden="true"></canvas>
+
+  <main id="app">
+
+    <!-- ============ HOME ============ -->
+    <section class="screen active" id="screen-home">
+      <div class="home-hero">
+        <div class="mascot" id="home-mascot">🚀</div>
+        <h1 class="logo">Math <span>Galaxy</span></h1>
+        <p class="tagline">Blast through the times tables, one planet at a time!</p>
+      </div>
+
+      <div class="home-card" id="home-newpilot">
+        <label for="pilot-name">What should we call you, pilot?</label>
+        <input id="pilot-name" type="text" maxlength="14" placeholder="Your name" autocomplete="off" />
+        <button class="btn big" id="btn-start">Start Adventure 🚀</button>
+      </div>
+
+      <div class="home-card hidden" id="home-returning">
+        <p class="welcome-back">Welcome back, <strong id="pilot-greeting">Pilot</strong>!</p>
+        <div class="rank-row">
+          <span class="rank-badge" id="home-rank">Rank 1</span>
+          <span class="buddy-strip" id="home-buddies"></span>
+        </div>
+        <button class="btn big" id="btn-continue">Continue Journey ✨</button>
+        <div class="home-links">
+          <button class="link" id="link-map">🗺️ Star Map</button>
+          <button class="link" id="link-stats">📊 My Stats</button>
+          <button class="link" id="link-settings">⚙️ Settings</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MAP ============ -->
+    <section class="screen" id="screen-map">
+      <header class="bar">
+        <button class="icon-btn" data-nav="home">‹ Home</button>
+        <h2>Star Map</h2>
+        <button class="icon-btn" data-nav="stats">📊</button>
+      </header>
+      <p class="map-intro">Pick a planet to explore. Clear its <b>test</b> to unlock the next one!</p>
+      <div class="planet-track" id="planet-track"></div>
+    </section>
+
+    <!-- ============ PLANET CHOICE (modal-ish) ============ -->
+    <section class="screen" id="screen-planet">
+      <header class="bar">
+        <button class="icon-btn" data-nav="map">‹ Map</button>
+        <h2 id="planet-title">Planet</h2>
+        <span style="width:48px"></span>
+      </header>
+      <div class="planet-detail">
+        <div class="planet-big" id="planet-big">🪐</div>
+        <div class="planet-stars" id="planet-stars">☆☆☆</div>
+        <p class="planet-hint" id="planet-hint"></p>
+        <div class="planet-progress">
+          <div class="bar-track"><div class="bar-fill" id="planet-bar"></div></div>
+          <span id="planet-progress-label">0 / 0 facts mastered</span>
+        </div>
+        <div class="planet-actions">
+          <button class="btn" id="btn-practice">🎈 Practice <small>no pressure</small></button>
+          <button class="btn alt" id="btn-test">🏅 Take the Test <small>unlock next</small></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PLAY ============ -->
+    <section class="screen" id="screen-play">
+      <header class="bar play-bar">
+        <button class="icon-btn" id="btn-quit-play">✕</button>
+        <div class="play-meta">
+          <span class="pill" id="play-mode-pill">Practice</span>
+          <span class="pill streak" id="streak-pill">🔥 0</span>
+        </div>
+        <div class="xp-mini">
+          <span id="xp-rank">R1</span>
+          <div class="bar-track tiny"><div class="bar-fill" id="xp-bar"></div></div>
+        </div>
+      </header>
+
+      <!-- test progress dots -->
+      <div class="test-dots" id="test-dots" hidden></div>
+
+      <div class="play-stage">
+        <div class="buddy-cheer" id="buddy-cheer">⭐</div>
+        <div class="question" id="question">
+          <span id="q-a">6</span>
+          <span class="times">×</span>
+          <span id="q-b">7</span>
+          <span class="eq">=</span>
+          <span class="answer-slot" id="answer-slot">?</span>
+        </div>
+
+        <div class="feedback" id="feedback"></div>
+
+        <!-- mic -->
+        <div class="mic-zone" id="mic-zone">
+          <button class="mic-btn" id="mic-btn" aria-label="Microphone">
+            <span class="mic-glyph">🎤</span>
+            <span class="mic-rings"></span>
+          </button>
+          <p class="heard" id="heard">Tap the mic and say your answer!</p>
+        </div>
+
+        <!-- keypad fallback (always available) -->
+        <div class="keypad" id="keypad">
+          <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+          <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+          <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+          <button data-k="back" class="key-fn">⌫</button>
+          <button data-k="0">0</button>
+          <button data-k="enter" class="key-fn go">✓</button>
+        </div>
+
+        <div class="play-tools">
+          <button class="tool" id="btn-hint" hidden>💡 Hint</button>
+          <button class="tool" id="btn-skip">⏭️ Skip</button>
+          <button class="tool" id="btn-finish-practice" hidden>🏁 Done</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RESULTS ============ -->
+    <section class="screen" id="screen-result">
+      <div class="result-card">
+        <div class="result-burst" id="result-burst">🎉</div>
+        <h2 id="result-title">Great job!</h2>
+        <div class="result-stars" id="result-stars">★★★</div>
+        <div class="result-stats" id="result-stats"></div>
+        <div class="result-reward hidden" id="result-reward"></div>
+        <div class="result-actions">
+          <button class="btn" id="btn-result-again">Try Again</button>
+          <button class="btn alt" id="btn-result-map">Star Map 🗺️</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ STATS ============ -->
+    <section class="screen" id="screen-stats">
+      <header class="bar">
+        <button class="icon-btn" data-nav="home">‹ Home</button>
+        <h2>My Stats</h2>
+        <span style="width:48px"></span>
+      </header>
+      <div class="stats-body">
+        <div class="stat-tiles" id="stat-tiles"></div>
+        <h3>My Buddies</h3>
+        <div class="buddy-collection" id="buddy-collection"></div>
+        <h3>Fact Power Grid</h3>
+        <p class="grid-legend">
+          <span class="lg lg0"></span>new
+          <span class="lg lg2"></span>learning
+          <span class="lg lg4"></span>strong
+          <span class="lg lg5"></span>mastered
+        </p>
+        <div class="heatmap-wrap"><div class="heatmap" id="heatmap"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="screen" id="screen-settings">
+      <header class="bar">
+        <button class="icon-btn" data-nav="home">‹ Home</button>
+        <h2>Settings</h2>
+        <span style="width:48px"></span>
+      </header>
+      <div class="settings-body">
+        <label class="toggle">
+          <span>🎤 Microphone answers</span>
+          <input type="checkbox" id="set-mic" />
+        </label>
+        <p class="set-note" id="mic-support-note"></p>
+        <label class="toggle">
+          <span>🔊 Spoken questions</span>
+          <input type="checkbox" id="set-voice" />
+        </label>
+        <label class="toggle">
+          <span>🎵 Sound effects</span>
+          <input type="checkbox" id="set-sound" />
+        </label>
+        <label class="field">
+          <span>Pilot name</span>
+          <input type="text" id="set-name" maxlength="14" />
+        </label>
+        <button class="btn danger" id="btn-reset">🗑️ Reset all progress</button>
+        <p class="set-note">Progress is saved only on this device, in this browser. No account needed.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- a11y live region for screen readers -->
+  <div id="live" aria-live="polite" class="sr-only"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
