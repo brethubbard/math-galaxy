@@ -146,8 +146,7 @@ export function recordAnswer(save, question, isCorrect, elapsedMs) {
 
   if (isCorrect) {
     f.correct++;
-    f.streak++;
-    save.streakBest = Math.max(save.streakBest, f.streak);
+    f.streak++; // per-fact streak (feeds XP bonus); the visible session streak lives in app.js
     // EMA of response time (only for correct answers).
     f.ema = f.ema == null ? elapsedMs : Math.round(f.ema * 0.7 + elapsedMs * 0.3);
     f.best = f.best == null ? elapsedMs : Math.min(f.best, elapsedMs);

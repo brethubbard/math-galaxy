@@ -160,12 +160,13 @@ function startPlay(mode) {
   state.play = {
     mode, planetId,
     expected: null, question: null, startedAt: 0, locked: true,
-    answerStr: '', micMisfires: 0,
+    answerStr: '', micMisfires: 0, streak: 0,
     practice: { count: 0, correct: 0 },
     test: mode === 'test' ? { queue: E.buildTest(state.save, planetId), idx: 0, results: [] } : null,
   };
 
   $('#play-mode-pill').textContent = mode === 'test' ? '🏅 Test' : '🎈 Practice';
+  $('#streak-pill').textContent = '🔥 0';
   $('#btn-hint').hidden = mode === 'test';            // no hints during a test
   $('#btn-finish-practice').hidden = mode !== 'practice';
   $('#test-dots').hidden = mode !== 'test';
@@ -309,7 +310,9 @@ function commit(value, viaMic = false) {
   updateXpBar();
 
   if (isCorrect) {
-    $('#streak-pill').textContent = `🔥 ${state.save.facts[play.question.key].streak}`;
+    play.streak++; // running count of correct answers in a row THIS session
+    if (play.streak > state.save.streakBest) { state.save.streakBest = play.streak; E.persist(state.save); }
+    $('#streak-pill').textContent = `🔥 ${play.streak}`;
     const msg = result.fast ? pick(['Lightning fast! ⚡', 'Zoom! 🚀', 'Wow! ⭐', 'Boom! 💥'])
                             : pick(['Nice! 🎉', 'You got it! ✅', 'Great! 🌟', 'Correct! 👏']);
     setFeedback(msg + (viaMic ? '' : ''), 'good');
@@ -319,6 +322,7 @@ function commit(value, viaMic = false) {
     if (state.save.settings.voicePrompts && ttsSupported && result.mastered) speak('Mastered!', { mic: state.mic });
     setTimeout(advance, 750);
   } else {
+    play.streak = 0;
     $('#streak-pill').textContent = '🔥 0';
     setFeedback(`It's ${play.expected}. You'll get it next time! 💪`, 'soft shake');
     beep(false);
