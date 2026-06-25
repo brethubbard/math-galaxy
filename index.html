@@ -7,6 +7,13 @@
   <title>Math Galaxy 🚀 — Times Table Adventure</title>
   <meta name="description" content="A whimsy-filled space adventure for mastering multiplication facts — practice and test by voice or tap." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
+  <!-- PWA: installable + offline -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Math Galaxy" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -26,6 +33,7 @@
         <div class="mascot" id="home-mascot">🚀</div>
         <h1 class="logo">Math <span>Galaxy</span></h1>
         <p class="tagline">Blast through the times tables, one planet at a time!</p>
+        <button class="btn-install hidden" id="btn-install">⬇️ Install app</button>
       </div>
 
       <div class="home-card" id="home-newpilot">

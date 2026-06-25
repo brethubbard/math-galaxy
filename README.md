@@ -31,6 +31,20 @@ Locally, just run the helper script — it serves the app and opens your browser
 > The microphone needs a *secure context*: it works on `https://` (GitHub Pages) and on
 > `http://localhost`, but **not** over a plain `http://` LAN address.
 
+## Install it (it's a PWA)
+
+Math Galaxy is a **Progressive Web App** — it installs to a home screen / app launcher
+and runs fullscreen like a native app, with its own rocket icon.
+
+- **Phone / tablet:** open the site in the browser → **Add to Home Screen**.
+- **Desktop Chrome/Edge:** click the **Install app** button on the home screen (or the
+  install icon in the address bar).
+
+Once installed, a **service worker** (`sw.js`) caches the whole app, so it **launches and
+plays offline** via the keypad — no connection needed. (Voice answers still need internet,
+since speech recognition runs in the cloud.) Bump the `CACHE` version in `sw.js` when you
+change shell files so installed copies pick up the update.
+
 ## Deploy to GitHub Pages
 
 ```bash

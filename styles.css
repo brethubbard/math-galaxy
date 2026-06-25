@@ -80,6 +80,12 @@ body {
 .logo { font-size: 3rem; margin: 6px 0 0; letter-spacing: .5px; text-shadow: 0 4px 0 rgba(0,0,0,.25); }
 .logo span { color: var(--accent); }
 .tagline { color: var(--ink-dim); margin: 6px 0 0; }
+.btn-install {
+  margin-top: 14px; font-family: var(--font); font-weight: 600; font-size: .95rem;
+  color: var(--ink); background: var(--card); border: 1px solid var(--card-edge);
+  border-radius: 999px; padding: 10px 20px; cursor: pointer;
+}
+.btn-install:active { transform: scale(.96); }
 
 .home-card {
   background: var(--card); border: 1px solid var(--card-edge); border-radius: var(--radius);

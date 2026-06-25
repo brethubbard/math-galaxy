@@ -1,0 +1,17 @@
+{
+  "name": "Math Galaxy — Times Table Adventure",
+  "short_name": "Math Galaxy",
+  "description": "A whimsical space adventure for mastering multiplication facts by voice or tap.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1026",
+  "theme_color": "#0b1026",
+  "categories": ["education", "kids", "games"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -28,9 +28,36 @@ function boot() {
   bindHome();
   bindPlay();
   bindStatsAndSettings();
+  initPWA();
 
   if (state.save) renderHome(true);
   else renderHome(false);
+}
+
+// ---- PWA: install the app + register the offline service worker ----
+function initPWA() {
+  // Register the service worker (makes the app installable + work offline).
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => { /* offline-only is fine */ });
+    });
+  }
+  // Show our own "Install app" button when the browser says it's installable.
+  let deferred = null;
+  const btn = $('#btn-install');
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    if (btn) btn.classList.remove('hidden');
+  });
+  if (btn) btn.addEventListener('click', async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    await deferred.userChoice;
+    deferred = null;
+    btn.classList.add('hidden');
+  });
+  window.addEventListener('appinstalled', () => { if (btn) btn.classList.add('hidden'); });
 }
 
 function bindGlobal() {

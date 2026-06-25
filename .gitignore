@@ -1,4 +1,4 @@
 .DS_Store
 .playwright-mcp/
-*.png
+/*.png
 node_modules/
