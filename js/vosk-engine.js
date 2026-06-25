@@ -43,7 +43,11 @@ function loadLibrary() {
 }
 function getModel(url) {
   if (!modelPromise) {
-    modelPromise = loadLibrary().then((V) => V.createModel(url)).catch((e) => {
+    // Resolve to an ABSOLUTE url: vosk-browser fetches the model from inside its
+    // Web Worker, where a relative path would resolve against the worker/CDN, not
+    // this page. Absolute keeps it pointed at our own origin.
+    const absUrl = new URL(url, location.href).href;
+    modelPromise = loadLibrary().then((V) => V.createModel(absUrl)).catch((e) => {
       modelPromise = null; // allow a retry next time
       throw e;
     });
