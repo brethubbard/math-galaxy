@@ -18,13 +18,15 @@ GitHub Pages and play.
 Open `index.html` in **Chrome, Edge, or Safari** (with an internet connection — the speech
 recognizer is cloud-based). Say or tap your answer. That's it.
 
-Locally:
+Locally, just run the helper script — it serves the app and opens your browser:
 
 ```bash
-cd multiplication-drill
-python3 -m http.server 8765
-# visit http://localhost:8765
+./run.sh            # serve on http://localhost:8765 and open it
+./run.sh 9000       # use a different port
+./run.sh --no-open  # serve without opening a browser
 ```
+
+(It uses `python3` if present, falling back to `python` or `npx serve`. Press Ctrl+C to stop.)
 
 > The microphone needs a *secure context*: it works on `https://` (GitHub Pages) and on
 > `http://localhost`, but **not** over a plain `http://` LAN address.
