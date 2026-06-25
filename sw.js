@@ -8,7 +8,7 @@
 // cache-first with a background refresh (stale-while-revalidate). Bump CACHE
 // whenever shell files change so clients pick up the new version.
 
-const CACHE = 'math-galaxy-v2';
+const CACHE = 'math-galaxy-v4';
 
 // Paths are relative to this file's location, so it works under any base path
 // (e.g. a GitHub Pages project subpath like /math-galaxy/).

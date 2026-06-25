@@ -39,6 +39,7 @@ const state = {
   play: null,
   audioCtx: null,
   wakeLock: null,
+  lastMicCommitAt: 0,   // suppress trailing recognizer results after a voice answer
 };
 
 // ===========================================================================
@@ -375,17 +376,28 @@ function wireMic(mic) {
     dbg('heard', `"${transcript}" → [${candidates.join(',')}] ${isFinal ? 'final' : 'partial'} expect=${play ? play.expected : '-'}${play && candidates.includes(play.expected) ? ' ✓MATCH' : ''}`);
     if (!play || play.locked || state.screen !== 'play') return;
 
+    // Ignore the trailing tail of the utterance we just answered with — its late
+    // 'final' result must not auto-answer the NEXT question.
+    if (performance.now() - state.lastMicCommitAt < 1200) return;
+
     // Delightful path: heard the correct answer -> instant win.
     if (candidates.includes(play.expected)) { commit(play.expected, true); return; }
 
-    // Otherwise show what we heard so the child can self-correct.
-    if (transcript) $('#heard').innerHTML = `I heard: <b>${escapeHtml(transcript)}</b> 🤔`;
+    // Show what we heard so the child can self-correct. Prefer a clean number;
+    // never surface the recognizer's raw "[unk]" / empty unknown token.
+    if (candidates.length) {
+      $('#heard').innerHTML = `I heard <b>${candidates[0]}</b> 🤔`;
+    } else if (transcript) {
+      $('#heard').innerHTML = `I heard: <b>${escapeHtml(transcript)}</b> 🤔`;
+    } else if (isFinal) {
+      $('#heard').innerHTML = 'Hmm, I didn\'t catch that 🤔 — say it again or tap below 👇';
+    }
 
-    // Count a clear miss only on a final result; nudge the keypad after two.
-    if (isFinal && candidates.length) {
+    // Any non-matching FINAL counts as a miss; nudge the keypad after two.
+    if (isFinal) {
       play.micMisfires++;
       if (play.micMisfires >= 2) {
-        $('#heard').innerHTML = 'Hmm, the mic isn\'t sure — tap your answer below 👇';
+        $('#heard').innerHTML = 'The mic isn\'t sure — tap your answer below 👇';
         $('#keypad').classList.add('nudge');
       }
     }
@@ -422,6 +434,7 @@ function commit(value, viaMic = false) {
   const play = state.play;
   if (!play || play.locked) return;
   play.locked = true;
+  if (viaMic) state.lastMicCommitAt = performance.now(); // start the suppression window
 
   const elapsed = performance.now() - play.startedAt;
   const isCorrect = value !== null && value === play.expected;

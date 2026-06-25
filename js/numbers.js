@@ -110,14 +110,19 @@ export function extractCandidates(raw) {
 
   const text = String(raw || '').toLowerCase();
 
-  // Whole-string parse first (handles "fifty four").
+  // Whole-string parse first (handles "fifty four" → 54).
   push(parseNumber(text));
 
   // Then each standalone digit run.
   for (const m of text.matchAll(/\d{1,3}/g)) push(parseInt(m[0], 10));
 
-  // Then each word individually (catches single-digit answers buried in filler).
-  for (const word of text.split(/\s+/)) push(parseNumber(word));
+  // Only if nothing parsed yet, fall back to word-by-word (catches a lone number
+  // buried in filler). We deliberately DON'T decompose a compound that already
+  // parsed — otherwise "twenty four" would also yield 20 and 4, which causes
+  // false matches against the current or the next question.
+  if (out.length === 0) {
+    for (const word of text.split(/\s+/)) push(parseNumber(word));
+  }
 
   return out;
 }
