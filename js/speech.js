@@ -111,13 +111,22 @@ if (ttsSupported) {
   speechSynthesis.onvoiceschanged = pickVoice;
 }
 
+// TTS can be "supported" yet have ZERO installed voices (common on Linux/Chrome
+// without speech-dispatcher). In that case every utterance fails with
+// 'synthesis-failed' and nothing is heard. Treat no-voices as not-really-available.
+export function hasVoices() {
+  return ttsSupported && speechSynthesis.getVoices().length > 0;
+}
+
 /**
  * Speak text. If a Mic is passed, it is muted during speech and unmuted after,
  * so we never transcribe our own audio. Returns a Promise that resolves when done.
  */
 export function speak(text, { mic = null, rate = 1, pitch = 1.05 } = {}) {
   return new Promise((resolve) => {
-    if (!ttsSupported) { resolve(); return; }
+    // Bail quietly if speech is unsupported OR there are no installed voices —
+    // otherwise we'd fire a doomed utterance and just delay the game.
+    if (!ttsSupported || speechSynthesis.getVoices().length === 0) { resolve(); return; }
     try { speechSynthesis.cancel(); } catch (_) {}
     if (mic) mic.mute();
     const u = new SpeechSynthesisUtterance(text);

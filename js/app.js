@@ -2,7 +2,7 @@
 
 import { PLANETS, BUDDIES, factsForPlanet } from './levels.js';
 import * as E from './engine.js';
-import { Mic, micSupported, ttsSupported, speak } from './speech.js';
+import { Mic, micSupported, ttsSupported, hasVoices, speak } from './speech.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -217,7 +217,7 @@ async function nextQuestion() {
     : 'Tap your answer below 👇';
 
   // Optional spoken prompt (mutes mic while talking).
-  if (state.save.settings.voicePrompts && ttsSupported) {
+  if (state.save.settings.voicePrompts && hasVoices()) {
     await speak(`What is ${play.question.a} times ${play.question.b}?`, { mic: state.mic });
   }
 
@@ -319,14 +319,14 @@ function commit(value, viaMic = false) {
     cheer(result.fast ? '🌟' : '⭐', result.mastered);
     beep(true, result.fast);
     if (result.fast) confettiBurst(result.mastered ? 60 : 24);
-    if (state.save.settings.voicePrompts && ttsSupported && result.mastered) speak('Mastered!', { mic: state.mic });
+    if (state.save.settings.voicePrompts && hasVoices() && result.mastered) speak('Mastered!', { mic: state.mic });
     setTimeout(advance, 750);
   } else {
     play.streak = 0;
     $('#streak-pill').textContent = '🔥 0';
     setFeedback(`It's ${play.expected}. You'll get it next time! 💪`, 'soft shake');
     beep(false);
-    if (state.save.settings.voicePrompts && ttsSupported) {
+    if (state.save.settings.voicePrompts && hasVoices()) {
       speak(`${play.question.a} times ${play.question.b} is ${play.expected}`, { mic: state.mic });
     }
     setTimeout(advance, 1700);
@@ -415,7 +415,7 @@ function showResult(grade, planetId) {
       (nextName ? `<br>🔓 <b>${nextName}</b> is now unlocked!` : '<br>You finished the whole galaxy! 🌌');
     confettiBurst(140);
     beep(true, true);
-    if (state.save.settings.voicePrompts && ttsSupported) speak('Planet cleared! Awesome work!', {});
+    if (state.save.settings.voicePrompts && hasVoices()) speak('Planet cleared! Awesome work!', {});
   } else {
     reward.classList.add('hidden');
     if (cleared) confettiBurst(80);
@@ -502,13 +502,19 @@ function renderSettings() {
   const s = state.save.settings;
   $('#set-mic').checked = s.useMic && micSupported;
   $('#set-mic').disabled = !micSupported;
-  $('#set-voice').checked = s.voicePrompts && ttsSupported;
-  $('#set-voice').disabled = !ttsSupported;
+  const voiceOk = hasVoices();
+  $('#set-voice').checked = s.voicePrompts && voiceOk;
+  $('#set-voice').disabled = !voiceOk;
   $('#set-sound').checked = s.sound;
   $('#set-name').value = state.save.name;
   $('#mic-support-note').textContent = micSupported
     ? 'Works best in Chrome, Edge, or Safari with an internet connection.'
     : '⚠️ This browser can\'t use the mic (try Chrome or Safari). Tap answers instead — everything still works!';
+  $('#voice-support-note').textContent = voiceOk
+    ? 'Reads each question aloud.'
+    : (!ttsSupported
+        ? '⚠️ This browser can\'t speak. Sound effects still work.'
+        : '⚠️ No speech voices are installed on this computer, so questions can\'t be read aloud. On Linux, install a voice engine (e.g. "sudo apt install speech-dispatcher espeak-ng") and restart your browser. Sound effects still work.');
 
   $('#set-mic').onchange = (e) => { state.save.settings.useMic = e.target.checked; E.persist(state.save); };
   $('#set-voice').onchange = (e) => { state.save.settings.voicePrompts = e.target.checked; E.persist(state.save); };
