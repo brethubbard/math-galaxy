@@ -7,6 +7,29 @@ import { Mic, micSupported, ttsSupported, hasVoices, speak } from './speech.js';
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
+// ---- voice debug log (enable with ?debug in the URL) ----
+const DEBUG = /[?&]debug\b/.test(location.search);
+function dbg(tag, msg) {
+  if (!DEBUG) return;
+  const line = `[${tag}] ${msg}`;
+  console.log('%c[voice]', 'color:#6ce5c8', line);
+  const log = document.querySelector('#dbg-log');
+  if (log) {
+    const d = document.createElement('div');
+    d.textContent = new Date().toLocaleTimeString().split(' ')[0] + ' ' + line;
+    log.prepend(d);
+    while (log.childElementCount > 40) log.lastChild.remove();
+  }
+}
+function initDebug() {
+  if (!DEBUG) return;
+  const p = document.createElement('div');
+  p.id = 'dbg-panel';
+  p.innerHTML = '<div class="dbg-head">🛠 voice debug <span id="dbg-eng"></span></div><div id="dbg-log"></div>';
+  document.body.appendChild(p);
+  dbg('init', 'debug log on');
+}
+
 const state = {
   save: null,
   mic: null,        // the ACTIVE mic engine (points at webMic or voskMic)
@@ -33,6 +56,7 @@ function boot() {
   bindPlay();
   bindStatsAndSettings();
   initPWA();
+  initDebug();
 
   if (state.save) renderHome(true);
   else renderHome(false);
@@ -207,6 +231,8 @@ async function startPlay(mode) {
   showScreen('play');
   requestWakeLock(); // keep the screen on while playing (kids pause to think)
   await ensureEngine();          // pick Web Speech or Vosk (lazy-loads Vosk if needed)
+  const dbgEng = $('#dbg-eng'); if (dbgEng) dbgEng.textContent = `· ${state.save.settings.engine} · mic ${micEnabled() ? 'on' : 'off'}`;
+  dbg('start', `engine=${state.save.settings.engine} micEnabled=${micEnabled()}`);
   if (micEnabled()) state.mic.start();
   nextQuestion();
 }
@@ -220,7 +246,8 @@ async function ensureEngine() {
         const mod = await import('./vosk-engine.js');
         state.voskMic = new mod.VoskMic();
         wireMic(state.voskMic);
-      } catch (_) { state.save.settings.engine = 'web'; E.persist(state.save); }
+        dbg('engine', 'vosk module loaded');
+      } catch (e) { dbg('engine', 'vosk load FAILED: ' + e); state.save.settings.engine = 'web'; E.persist(state.save); }
     }
     if (state.voskMic) { state.mic = state.voskMic; return; }
   }
@@ -342,8 +369,10 @@ function onKey(k) {
 
 // ---- input: mic ---- (wires whichever engine is passed: Web Speech or Vosk)
 function wireMic(mic) {
+  mic.onDebug = (tag, info) => dbg(tag, info); // Vosk diagnostics (audio flow, raw text)
   mic.onHeard = (candidates, transcript, isFinal) => {
     const play = state.play;
+    dbg('heard', `"${transcript}" → [${candidates.join(',')}] ${isFinal ? 'final' : 'partial'} expect=${play ? play.expected : '-'}${play && candidates.includes(play.expected) ? ' ✓MATCH' : ''}`);
     if (!play || play.locked || state.screen !== 'play') return;
 
     // Delightful path: heard the correct answer -> instant win.
@@ -362,6 +391,7 @@ function wireMic(mic) {
     }
   };
   mic.onState = (st, detail) => {
+    dbg('state', st + (detail ? ' ' + detail : ''));
     if (st === 'loading') {
       $('#mic-btn').classList.remove('listening');
       $('#heard').innerHTML = '🛰️ Loading the smart voice model… <small>(one-time, may take a bit)</small>';

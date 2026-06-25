@@ -62,6 +62,8 @@ export class VoskMic {
     this.muted = false;
     this.onHeard = null;   // (candidates:number[], transcript:string, isFinal:bool)
     this.onState = null;   // (state:'loading'|'listening'|'idle'|'error', detail?)
+    this.onDebug = null;   // (tag:string, info:string) — diagnostics only
+    this._frames = 0;
     this._model = null;
     this._ctx = null; this._stream = null; this._source = null; this._node = null;
     this._sink = null; this._rec = null;
@@ -90,15 +92,34 @@ export class VoskMic {
       if (!this.listening) { this._teardown(); return; }
 
       this._ctx = new (window.AudioContext || window.webkitAudioContext)();
+      try { await this._ctx.resume(); } catch (_) {}
+      if (this.onDebug) this.onDebug('audio', `ctx ${this._ctx.state} @ ${this._ctx.sampleRate}Hz`);
       this._rec = new this._model.KaldiRecognizer(this._ctx.sampleRate, GRAMMAR);
       this._rec.setWords(true);
-      this._rec.on('result', (m) => this._emit(m && m.result && m.result.text, true));
-      this._rec.on('partialresult', (m) => this._emit(m && m.result && m.result.partial, false));
+      this._rec.on('result', (m) => {
+        const t = m && m.result && m.result.text;
+        if (this.onDebug) this.onDebug('final', JSON.stringify(t || ''));
+        this._emit(t, true);
+      });
+      this._rec.on('partialresult', (m) => {
+        const t = m && m.result && m.result.partial;
+        if (t && this.onDebug) this.onDebug('partial', JSON.stringify(t));
+        this._emit(t, false);
+      });
 
       this._source = this._ctx.createMediaStreamSource(this._stream);
       this._node = this._ctx.createScriptProcessor(4096, 1, 1);
+      this._frames = 0;
       this._node.onaudioprocess = (e) => {
-        if (!this.muted && this._rec) { try { this._rec.acceptWaveform(e.inputBuffer); } catch (_) {} }
+        if (this.muted || !this._rec) return;
+        this._frames++;
+        // heartbeat so we can confirm mic audio is actually flowing
+        if (this.onDebug && this._frames % 20 === 0) {
+          const ch = e.inputBuffer.getChannelData(0);
+          let peak = 0; for (let i = 0; i < ch.length; i += 64) peak = Math.max(peak, Math.abs(ch[i]));
+          this.onDebug('audio', `frames=${this._frames} peak=${peak.toFixed(3)}`);
+        }
+        try { this._rec.acceptWaveform(e.inputBuffer); } catch (err) { if (this.onDebug) this.onDebug('error', 'acceptWaveform: ' + err); }
       };
       // Route through a muted gain node so the processor runs without echoing the mic.
       this._sink = this._ctx.createGain();
