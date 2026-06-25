@@ -19,16 +19,27 @@ const TENS = {
 
 // Common recognizer mishears for a young voice. Conservative on purpose — we only
 // map words that are almost never anything else in a "say a number" context.
+// This only affects AUTO-ACCEPT: a heard word is taken as a number only when it
+// equals the expected answer, so extra mappings can't cause a wrong answer to be
+// marked wrong — they just rescue more correct answers. Safe to be generous.
 const HOMOPHONES = {
-  to: 'two', too: 'two', tu: 'two',
-  for: 'four', fore: 'four',
-  ate: 'eight',
-  won: 'one',
-  free: 'three', tree: 'three',
-  sex: 'six', sicks: 'six',
-  tan: 'ten',
+  zero: 'zero', hero: 'zero', ziro: 'zero',
+  one: 'one', won: 'one', wan: 'one', juan: 'one',
+  two: 'two', to: 'two', too: 'two', tu: 'two', dew: 'two', do: 'two',
+  three: 'three', free: 'three', tree: 'three', thee: 'three', thri: 'three',
+  four: 'four', for: 'four', fore: 'four', thor: 'four', faux: 'four', floor: 'four', far: 'four',
+  five: 'five', fife: 'five', hive: 'five', v: 'five',
+  six: 'six', sex: 'six', sicks: 'six', sick: 'six', sics: 'six',
+  seven: 'seven',
+  eight: 'eight', ate: 'eight', hate: 'eight', ait: 'eight',
+  nine: 'nine', nein: 'nine', nighn: 'nine', night: 'nine',
+  ten: 'ten', tan: 'ten', tin: 'ten', den: 'ten',
+  eleven: 'eleven',
+  twelve: 'twelve', twelfth: 'twelve', shelve: 'twelve',
   fiddy: 'fifty', fifty: 'fifty',
-  thirdy: 'thirty', thirdteen: 'thirteen',
+  thirdy: 'thirty', thirty: 'thirty',
+  thirdteen: 'thirteen', thirteen: 'thirteen',
+  fourty: 'forty', forty: 'forty',
 };
 
 /**
