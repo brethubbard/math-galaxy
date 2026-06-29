@@ -235,6 +235,7 @@ export class Session {
     m.correct = [];
     m.locked = new Set();
     m.graceTimer = null;
+    m.resolved = false;            // guards against resolving the same question twice
     m.lastResult = null;
     m.qTimer = setTimeout(() => this._resolveQuestion(), QUESTION_MS);
     this._emit({ phase: 'question', qIndex: idx, count: m.count });
@@ -244,6 +245,7 @@ export class Session {
   _handleInput(peerId, data) {
     const m = this._match;
     if (!m) return;
+    if (m.resolved) return;                              // question already resolved (in reveal)
     if (!data || data.qIndex !== m.qIndex) return;       // stale / wrong question
     if (!m.scores.has(peerId)) return;                   // not a player this match
     if (m.answered.has(peerId)) return;                  // one attempt each
@@ -265,6 +267,8 @@ export class Session {
   _resolveQuestion() {
     const m = this._match;
     if (!m || m.qIndex < 0) return;
+    if (m.resolved) return;        // already resolved this question; don't schedule a 2nd advance
+    m.resolved = true;
     if (m.qTimer) { clearTimeout(m.qTimer); m.qTimer = null; }
     if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
 
