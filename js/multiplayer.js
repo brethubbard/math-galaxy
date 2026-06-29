@@ -26,10 +26,10 @@ const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 // Match tuning.
 export const DEFAULT_COUNT = 10;  // questions per match
-const GRACE_MS = 350;             // window to catch a near-simultaneous correct answer
-const REVEAL_MS = 1600;           // how long the answer is shown before advancing
+export const GRACE_MS = 350;      // window to catch a near-simultaneous correct answer
+export const REVEAL_MS = 1600;    // how long the answer is shown before advancing
 export const QUESTION_MS = 15000; // per-question time limit (also drives the countdown bar)
-const COUNTDOWN_MS = 3200;        // 3·2·1 before the first question
+export const COUNTDOWN_MS = 3200; // 3·2·1 before the first question
 
 // Room codes kids can read aloud: 4 unambiguous uppercase letters (no I/O/0/1).
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -78,7 +78,7 @@ export function buildQuestions(tables, count, seed) {
 // Session: wraps the Trystero room, roster, the message protocol, and (on the
 // host) the authoritative match loop. app.js drives it via callbacks.
 // ---------------------------------------------------------------------------
-class Session {
+export class Session {
   constructor(code, isHost, { name = 'Player', callbacks = {} } = {}) {
     this.code = code;
     this.isHost = isHost;
@@ -235,6 +235,7 @@ class Session {
     m.correct = [];
     m.locked = new Set();
     m.graceTimer = null;
+    m.resolved = false;            // guards against resolving the same question twice
     m.lastResult = null;
     m.qTimer = setTimeout(() => this._resolveQuestion(), QUESTION_MS);
     this._emit({ phase: 'question', qIndex: idx, count: m.count });
@@ -244,6 +245,7 @@ class Session {
   _handleInput(peerId, data) {
     const m = this._match;
     if (!m) return;
+    if (m.resolved) return;                              // question already resolved (in reveal)
     if (!data || data.qIndex !== m.qIndex) return;       // stale / wrong question
     if (!m.scores.has(peerId)) return;                   // not a player this match
     if (m.answered.has(peerId)) return;                  // one attempt each
@@ -265,6 +267,8 @@ class Session {
   _resolveQuestion() {
     const m = this._match;
     if (!m || m.qIndex < 0) return;
+    if (m.resolved) return;        // already resolved this question; don't schedule a 2nd advance
+    m.resolved = true;
     if (m.qTimer) { clearTimeout(m.qTimer); m.qTimer = null; }
     if (m.graceTimer) { clearTimeout(m.graceTimer); m.graceTimer = null; }
 
