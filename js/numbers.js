@@ -1,9 +1,9 @@
-// numbers.js — turn whatever the speech recognizer (or keypad) gives us into an integer.
+// numbers.js — turn whatever the Vosk recognizer (or keypad) gives us into an integer.
 //
-// The Web Speech API is wildly inconsistent for spoken numbers from kids: it may
-// return "54", "fifty four", "fifty-four", or a mishear like "for" (four) or
-// "to" (two). This module normalizes all of that into a single integer so the
-// drill can compare against the expected answer. Range we care about: 0..144 (12×12).
+// Recognized number words arrive inconsistently from kids: "54", "fifty four",
+// "fifty-four", or a near-miss like "for" (four) or "to" (two). This module
+// normalizes all of that into a single integer so the drill can compare against
+// the expected answer. Range we care about: 0..144 (12×12).
 
 const ONES = {
   zero: 0, oh: 0, o: 0, nil: 0,

@@ -46,7 +46,7 @@ export function newSave(name) {
     xp: 0,
     streakBest: 0,
     trialCounter: 0,
-    settings: { useMic: true, voicePrompts: true, sound: true, engine: 'web' },
+    settings: { useMic: true, voicePrompts: true, sound: true },
     history: [],
   };
   // Ensure every planet has a record.
@@ -59,8 +59,8 @@ export function newSave(name) {
 }
 
 function migrate(save) {
-  if (!save.settings) save.settings = { useMic: true, voicePrompts: true, sound: true, engine: 'web' };
-  if (!save.settings.engine) save.settings.engine = 'web';
+  if (!save.settings) save.settings = { useMic: true, voicePrompts: true, sound: true };
+  delete save.settings.engine; // legacy: speech engine choice is gone (Vosk only)
   if (!save.buddies) save.buddies = [];
   if (!save.history) save.history = [];
   for (const p of PLANETS) {

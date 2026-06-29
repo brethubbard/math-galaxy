@@ -25,6 +25,16 @@
   <!-- celebration confetti -->
   <canvas id="confetti" aria-hidden="true"></canvas>
 
+  <!-- boot loading screen: downloads the on-device voice model up front -->
+  <div id="boot-loader" class="boot-loader" role="status" aria-live="polite">
+    <div class="boot-rocket">🚀</div>
+    <h1 class="boot-logo">Math <span>Galaxy</span></h1>
+    <p class="boot-status" id="boot-status">Preparing for launch…</p>
+    <div class="boot-bar-track" id="boot-bar-track"><div class="boot-bar-fill" id="boot-bar"></div></div>
+    <p class="boot-sub" id="boot-sub">Loading the voice — one time, then it works offline.</p>
+    <button class="boot-skip hidden" id="boot-skip">Continue without voice →</button>
+  </div>
+
   <main id="app">
 
     <!-- ============ HOME ============ -->
@@ -196,11 +206,6 @@
           <input type="checkbox" id="set-mic" />
         </label>
         <p class="set-note" id="mic-support-note"></p>
-        <label class="toggle">
-          <span>🎯 Accuracy mode <small>(smarter number hearing)</small></span>
-          <input type="checkbox" id="set-engine" />
-        </label>
-        <p class="set-note" id="engine-note"></p>
         <label class="toggle">
           <span>🔊 Spoken questions</span>
           <input type="checkbox" id="set-voice" />

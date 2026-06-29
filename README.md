@@ -7,16 +7,18 @@ GitHub Pages and play.
 
 > **Feasibility, honestly:** Yes, an excellent voice experience is achievable — *as long
 > as the mic is a delight layered on top of a rock-solid tap fallback*, not the only way
-> in. The browser speech recognizer mishears kids constantly ("thirteen" vs "thirty",
-> "four" vs "for") and doesn't exist at all in Firefox. So Math Galaxy treats voice as the
-> fun primary path and **always** shows a keypad, auto-nudging it after a couple of misfires.
+> in. A general-purpose recognizer mishears kids constantly ("thirteen" vs "thirty", "four"
+> vs "for"). Math Galaxy sidesteps that by recognizing speech **on-device with [Vosk](https://alphacephei.com/vosk/)**,
+> constrained to number words only — far more reliable for this task — and still **always**
+> shows a keypad, auto-nudging it after a couple of misfires.
 
 ---
 
 ## Play it
 
-Open `index.html` in **Chrome, Edge, or Safari** (with an internet connection — the speech
-recognizer is cloud-based). Say or tap your answer. That's it.
+Open `index.html` in a modern browser. On first launch it shows a loading screen while it
+downloads the ~40 MB on-device voice model (one time — then it's cached and works offline).
+Say or tap your answer. That's it.
 
 Locally, just run the helper script — it serves the app and opens your browser:
 
@@ -40,10 +42,10 @@ and runs fullscreen like a native app, with its own rocket icon.
 - **Desktop Chrome/Edge:** click the **Install app** button on the home screen (or the
   install icon in the address bar).
 
-Once installed, a **service worker** (`sw.js`) caches the whole app, so it **launches and
-plays offline** via the keypad — no connection needed. (Voice answers still need internet,
-since speech recognition runs in the cloud.) Bump the `CACHE` version in `sw.js` when you
-change shell files so installed copies pick up the update.
+Once installed, a **service worker** (`sw.js`) caches the whole app — shell *and* the voice
+model — so it **launches and plays fully offline**, voice included, no connection needed. The
+model lives in its own persistent cache, so bumping the `CACHE` version in `sw.js` (do this
+when you change shell files) never forces a 40 MB re-download.
 
 ## Deploy to GitHub Pages
 
@@ -110,32 +112,28 @@ No countdown clock, no red "X wrong" tally, no leaderboard. Misses get a kind "I
 you'll get it next time! 💪" and come back sooner. Short sessions, a visible finish line,
 and a high success rate (you mostly see facts you're winning at).
 
-### The microphone, realistically
-- Uses the browser **Web Speech API** (`webkitSpeechRecognition`). **Chrome / Edge / Safari**
-  only — **Firefox has no support**, where the app silently becomes tap-only.
-- It's **cloud-based**: needs internet, adds a little latency.
-- **Forgiving matching:** it checks every alternative the recognizer returns and a homophone
-  map (`for→four`, `ate→eight`, `to→two`…), and grades against the *expected* answer — so a
-  mishear rarely costs a correct kid. It only ever **auto-accepts the right answer**; it never
-  auto-marks you wrong from a mishear. Wrong answers are committed deliberately via the keypad.
+### The microphone (on-device Vosk)
+The one and only speech engine is a small [Vosk](https://alphacephei.com/vosk/) model that runs
+**entirely in the browser** (WebAssembly), with recognition **constrained to number words only**.
+That constraint is what fixes the classic "thirteen vs thirty" confusion — the recognizer has
+~30 number-words to choose from instead of the whole language.
+
+- **Private:** audio never leaves the device.
+- **Offline:** the ~40 MB model is downloaded **eagerly at app start behind a loading screen**,
+  then cached persistently — so every launch after the first is instant and works with no
+  connection. (Needs a *secure context* for mic access: `https://` or `http://localhost`.)
+- **Forgiving matching:** it checks every candidate number it heard and a homophone map
+  (`for→four`, `ate→eight`, `to→two`…), grading against the *expected* answer — so a near-miss
+  rarely costs a correct kid. It only ever **auto-accepts the right answer**; it never auto-marks
+  you wrong from a mishear. Wrong answers are committed deliberately via the keypad.
 - After ~2 mic misfires on a question, the keypad gently pulses so a child is never stuck.
 
-### Accuracy mode (on-device Vosk) — optional, more accurate
-There's a second speech engine behind **Settings → 🎯 Accuracy mode**: a small
-[Vosk](https://alphacephei.com/vosk/) model that runs **entirely in the browser** (WebAssembly),
-with recognition **constrained to number words only**. That constraint is what fixes the classic
-"thirteen vs thirty" confusion — the recognizer only has ~30 number-words to choose from instead
-of the whole language. It's also **private** (audio never leaves the device) and, once cached,
-**works offline**. Trade-off: a one-time ~40 MB model download and a touch more latency than the
-cloud Web Speech engine. The Web Speech engine stays the default; the keypad is always there.
-
-**Enable it:**
+**Set up the model (required — commit it so the page can serve it):**
 ```bash
 ./scripts/get-vosk-model.sh     # downloads + packages the model into models/ (~40 MB)
 ```
-Then commit `models/` (GitHub Pages serves it), open **Settings → Accuracy mode**, and reload.
-The engine (`js/vosk-engine.js`) is lazy-loaded — none of this downloads unless a user opts in.
-To host the model elsewhere instead of committing it, change `VOSK_MODEL_URL` in `js/vosk-engine.js`.
+Then commit `models/` (GitHub Pages serves it same-origin). To host the model elsewhere instead
+of committing it, change `VOSK_MODEL_URL` in `js/vosk-engine.js`.
 
 ### Whimsy & game feel
 Animated starfield, a floating rocket mascot, confetti on fast/mastered answers, a streak
@@ -151,8 +149,8 @@ index.html      all screens (home, map, planet, play, results, stats, settings)
 styles.css      space theme, animations, responsive (mobile-first)
 js/levels.js    the 10 planets + commutative fact generation
 js/engine.js    Leitner spaced repetition, mastery gating, XP, localStorage save
-js/speech.js    Web Speech API wrapper + text-to-speech (with mic-muting while it talks)
-js/vosk-engine.js  optional on-device Vosk engine (Accuracy mode), lazy-loaded
+js/vosk-engine.js  on-device Vosk speech recognition (the only mic engine) + eager model preload
+js/tts.js       text-to-speech for spoken questions/feedback (mutes the mic while it talks)
 js/numbers.js   spoken-number → integer normalization (+ homophone map)
 js/app.js       UI controller wiring it all together
 ```
@@ -175,4 +173,4 @@ test length, XP. The planet sequence and hints live in `js/levels.js`.
 - Baroody / NCTM — fluency = accuracy + efficiency + flexibility, not just speed.
 - Shelley Gray, The Rigorous Owl, Teacher Thrive — anchor→derived teaching sequence.
 - Leitner / spaced-repetition & interleaving literature.
-- MDN Web Speech API; caniuse "Speech Recognition" (browser support reality).
+- Vosk (alphacephei.com/vosk) + vosk-browser — on-device, grammar-constrained speech recognition.

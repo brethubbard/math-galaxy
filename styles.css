@@ -301,3 +301,41 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 #dbg-panel #dbg-eng { color: var(--ink-dim); font-weight: 400; }
 #dbg-log { overflow-y: auto; padding: 6px 10px; line-height: 1.5; }
 #dbg-log div { white-space: pre-wrap; word-break: break-word; border-bottom: 1px solid rgba(255,255,255,.05); padding: 1px 0; }
+
+/* ---------- boot loading screen ---------- */
+.boot-loader {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 32px;
+  background: radial-gradient(120% 120% at 50% 0%, var(--bg1) 0%, var(--bg0) 60%);
+  text-align: center; transition: opacity .4s ease;
+}
+.boot-loader.done { opacity: 0; pointer-events: none; }
+.boot-rocket { font-size: 4rem; animation: bootFloat 2.2s ease-in-out infinite; }
+@keyframes bootFloat { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-14px) rotate(4deg); } }
+.boot-logo { margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: .5px; }
+.boot-logo span { color: var(--accent); }
+.boot-status { margin: 0; color: var(--ink); font-weight: 600; font-size: 1.05rem; }
+.boot-sub { margin: 0; color: var(--ink-dim); font-size: .85rem; max-width: 24em; }
+.boot-bar-track {
+  width: min(80vw, 320px); height: 12px; border-radius: 99px; overflow: hidden;
+  background: rgba(255,255,255,.12); position: relative;
+}
+.boot-bar-fill {
+  height: 100%; width: 0%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent2), var(--accent));
+  transition: width .2s ease;
+}
+/* indeterminate sweep while we have no byte count (e.g. warming up the model) */
+.boot-bar-track.indeterminate .boot-bar-fill {
+  width: 40%; animation: bootSweep 1.1s ease-in-out infinite;
+}
+@keyframes bootSweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }
+.boot-skip {
+  margin-top: 6px; background: none; border: none; cursor: pointer;
+  color: var(--ink-dim); font-family: var(--font); font-size: .9rem; text-decoration: underline;
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-rocket { animation: none; }
+  .boot-bar-track.indeterminate .boot-bar-fill { animation: none; width: 100%; }
+}

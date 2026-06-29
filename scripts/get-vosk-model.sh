@@ -2,8 +2,8 @@
 # get-vosk-model.sh — download the small English Vosk model and package it as the
 # .tar.gz that vosk-browser expects, into ./models/.
 #
-# "Accuracy mode" loads this file. Hosting it in the repo (same-origin) avoids
-# CORS issues and lets the PWA service worker cache it for offline use.
+# The app loads this file as its (only) speech engine. Hosting it in the repo
+# (same-origin) avoids CORS issues and lets the PWA cache it for offline use.
 #
 # Note: it's ~40 MB. GitHub Pages serves it fine, but if you'd rather not commit a
 # 40 MB binary, you can host it elsewhere (CORS-enabled) and change VOSK_MODEL_URL
@@ -39,4 +39,4 @@ tar -C "$tmp" -czf "$OUT" "$MODEL"
 
 SIZE="$(du -h "$OUT" | cut -f1)"
 echo "✅ Done: $OUT ($SIZE)"
-echo "   Turn on Settings → Accuracy mode and reload to use it."
+echo "   Commit models/ and (re)load the app — it preloads this at startup."

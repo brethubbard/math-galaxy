@@ -1,14 +1,20 @@
 // sw.js — service worker for Math Galaxy.
 //
-// Makes the app installable and fully usable OFFLINE via the keypad. (The mic
-// uses a cloud recognizer, so voice answers still need internet — but the game,
-// progress, and tap input all work with no connection.)
+// Makes the app installable and fully usable OFFLINE. Voice recognition is
+// on-device (Vosk), so once the model is cached the whole experience — game,
+// progress, tap AND voice — works with no connection at all.
 //
 // Strategy: precache the app shell on install; serve same-origin GETs
 // cache-first with a background refresh (stale-while-revalidate). Bump CACHE
 // whenever shell files change so clients pick up the new version.
+//
+// The ~40 MB Vosk model lives in a SEPARATE, persistent cache (MODEL_CACHE,
+// populated by the app at boot — see js/vosk-engine.js). We never delete it on
+// activate, so bumping the shell version never forces a model re-download, and
+// the global caches.match() below serves it to vosk-browser's worker offline.
 
-const CACHE = 'math-galaxy-v4';
+const CACHE = 'math-galaxy-v5';
+const MODEL_CACHE = 'math-galaxy-model';
 
 // Paths are relative to this file's location, so it works under any base path
 // (e.g. a GitHub Pages project subpath like /math-galaxy/).
@@ -21,7 +27,8 @@ const CORE = [
   './js/engine.js',
   './js/levels.js',
   './js/numbers.js',
-  './js/speech.js',
+  './js/tts.js',
+  './js/vosk-engine.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
@@ -37,7 +44,11 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // Drop old shell caches, but KEEP the persistent model cache so the 40 MB
+      // voice model survives shell-version bumps.
+      .then((keys) => Promise.all(
+        keys.filter((k) => k !== CACHE && k !== MODEL_CACHE).map((k) => caches.delete(k))
+      ))
       .then(() => self.clients.claim())
   );
 });

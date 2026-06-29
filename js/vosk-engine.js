@@ -1,25 +1,31 @@
-// vosk-engine.js — high-accuracy, on-device speech recognition via vosk-browser.
+// vosk-engine.js — the app's only speech engine: on-device recognition via
+// vosk-browser.
 //
-// This is the optional "Accuracy mode" engine. It runs a small Vosk model in the
-// browser (WebAssembly), constrained to a GRAMMAR of number words only — which is
-// what makes it so much better than the general-purpose Web Speech API at telling
-// "thirteen" from "thirty". It's fully on-device: private, and (once the model is
-// cached by the service worker) it works offline.
+// It runs a small Vosk model in the browser (WebAssembly), constrained to a
+// GRAMMAR of number words only — which is what makes it reliably tell "thirteen"
+// from "thirty" where a general-purpose recognizer can't. It's fully on-device:
+// private (audio never leaves the device) and, once the model is cached, it
+// works offline.
 //
-// It mirrors the Mic class interface from speech.js (onHeard / onState / start /
-// stop / mute / unmute / listening) so the app can swap engines transparently.
-//
-// Lazy-loaded: this file (and the ~40 MB model) are only fetched when the user
-// turns on Accuracy mode, so the default app stays tiny.
+// The model (~40 MB) is downloaded EAGERLY at app start behind a loading screen
+// (see prefetchModel / buildModel below + the boot flow in app.js), then cached
+// persistently so later launches are instant and offline-capable.
 
 import { extractCandidates } from './numbers.js';
 
 // The vosk-browser UMD bundle (exposes a global `Vosk`). Pin a known version.
 const VOSK_CDN = 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js';
 
-// Default model location: same-origin so the service worker can cache it for
-// offline use (and to avoid CORS). Run scripts/get-vosk-model.sh to populate it.
+// Default model location: same-origin so it can be cached for offline use (and
+// to avoid CORS). Run scripts/get-vosk-model.sh to populate it.
 export const VOSK_MODEL_URL = './models/vosk-model-small-en-us-0.15.tar.gz';
+
+// Dedicated, persistent Cache Storage bucket for the model. Kept SEPARATE from
+// the versioned app-shell cache so bumping the service worker's shell version
+// never forces a 40 MB re-download. The service worker's global caches.match()
+// finds the model here and serves it to vosk-browser's worker (online or off);
+// sw.js deliberately preserves this cache across activations.
+export const MODEL_CACHE = 'math-galaxy-model';
 
 // Restrict recognition to number words 0..“one hundred …”. Everything the parser
 // in numbers.js understands is here; '[unk]' lets it gracefully ignore the rest.
@@ -53,6 +59,74 @@ function getModel(url) {
     });
   }
   return modelPromise;
+}
+
+// --- Eager boot-time loading (with a real download progress bar) ---------------
+//
+// We split the heavy work into two visible phases so the loading screen can show
+// meaningful status:
+//   1) prefetchModel() — stream the ~40 MB model down with byte-level progress and
+//      stash it in the persistent MODEL_CACHE.
+//   2) buildModel()    — load the vosk-browser library and instantiate the model
+//      (reads the bytes back from cache; no second download).
+
+/**
+ * Stream the model file down, reporting progress, and store it in MODEL_CACHE so
+ * vosk-browser's worker (and offline launches) can read it without re-downloading.
+ *
+ * @param {(frac:number|null, received:number, total:number) => void} [onProgress]
+ *   frac is 0..1 (or null when the server doesn't send Content-Length).
+ */
+export async function prefetchModel(onProgress) {
+  const absUrl = new URL(VOSK_MODEL_URL, location.href).href;
+  const haveCaches = 'caches' in self;
+
+  // Already cached from a previous visit? Then there's nothing to download.
+  if (haveCaches) {
+    try {
+      const cache = await caches.open(MODEL_CACHE);
+      if (await cache.match(absUrl)) { if (onProgress) onProgress(1, 0, 0); return; }
+    } catch (_) { /* fall through to a normal fetch */ }
+  }
+
+  const res = await fetch(absUrl);
+  if (!res || !res.ok) throw new Error('model fetch failed: ' + (res ? res.status : 'no response'));
+  const total = Number(res.headers.get('Content-Length')) || 0;
+
+  // Stream so we can report progress as bytes arrive.
+  if (res.body && res.body.getReader) {
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (onProgress) onProgress(total ? received / total : null, received, total);
+    }
+    const blob = new Blob(chunks, { type: 'application/gzip' });
+    if (haveCaches) {
+      try {
+        const cache = await caches.open(MODEL_CACHE);
+        await cache.put(absUrl, new Response(blob, {
+          headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(blob.size) },
+        }));
+      } catch (_) { /* cache is a nicety; the model is in memory regardless */ }
+    }
+  } else {
+    // No streaming support — just buffer the whole thing, no progress.
+    const blob = await res.blob();
+    if (onProgress) onProgress(1, blob.size, blob.size);
+    if (haveCaches) {
+      try { (await caches.open(MODEL_CACHE)).put(absUrl, new Response(blob)); } catch (_) {}
+    }
+  }
+}
+
+/** Load the vosk-browser library and instantiate the model (from cache). */
+export function buildModel() {
+  return getModel(VOSK_MODEL_URL);
 }
 
 export class VoskMic {
