@@ -26,10 +26,10 @@ const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 // Match tuning.
 export const DEFAULT_COUNT = 10;  // questions per match
-const GRACE_MS = 350;             // window to catch a near-simultaneous correct answer
-const REVEAL_MS = 1600;           // how long the answer is shown before advancing
+export const GRACE_MS = 350;      // window to catch a near-simultaneous correct answer
+export const REVEAL_MS = 1600;    // how long the answer is shown before advancing
 export const QUESTION_MS = 15000; // per-question time limit (also drives the countdown bar)
-const COUNTDOWN_MS = 3200;        // 3·2·1 before the first question
+export const COUNTDOWN_MS = 3200; // 3·2·1 before the first question
 
 // Room codes kids can read aloud: 4 unambiguous uppercase letters (no I/O/0/1).
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -78,7 +78,7 @@ export function buildQuestions(tables, count, seed) {
 // Session: wraps the Trystero room, roster, the message protocol, and (on the
 // host) the authoritative match loop. app.js drives it via callbacks.
 // ---------------------------------------------------------------------------
-class Session {
+export class Session {
   constructor(code, isHost, { name = 'Player', callbacks = {} } = {}) {
     this.code = code;
     this.isHost = isHost;
