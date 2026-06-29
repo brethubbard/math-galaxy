@@ -4,7 +4,10 @@
 // JSON so it survives across sessions and devices (if the child uses the same
 // browser). No backend, no accounts — perfect for a static GitHub Page.
 
-import { PLANETS, BUDDIES, factsForPlanet, parseFactKey, factKey } from './levels.js';
+import {
+  PLANETS, GALAXIES, OPERATIONS, factsForPlanet, parseFactKey, factKey,
+  galaxyOfPlanet, buddyForPlanet,
+} from './levels.js';
 
 const STORAGE_KEY = 'mathgalaxy.save.v1';
 
@@ -36,12 +39,15 @@ export function loadSave() {
   return null;
 }
 
+// The first planet of every galaxy starts unlocked.
+const STARTERS = new Set(GALAXIES.map((g) => g.planets[0].id));
+
 export function newSave(name) {
   const save = {
     name: name || 'Space Pilot',
     createdAt: Date.now(),
     facts: {},
-    planets: { L1: { unlocked: true, cleared: false, bestAcc: 0, bestAvgMs: null, stars: 0 } },
+    planets: {},
     buddies: [],
     xp: 0,
     streakBest: 0,
@@ -49,12 +55,7 @@ export function newSave(name) {
     settings: { useMic: true, voicePrompts: true, sound: true },
     history: [],
   };
-  // Ensure every planet has a record.
-  for (const p of PLANETS) {
-    if (!save.planets[p.id]) {
-      save.planets[p.id] = { unlocked: p.id === 'L1', cleared: false, bestAcc: 0, bestAvgMs: null, stars: 0 };
-    }
-  }
+  seedPlanets(save);
   return save;
 }
 
@@ -63,12 +64,19 @@ function migrate(save) {
   delete save.settings.engine; // legacy: speech engine choice is gone (Vosk only)
   if (!save.buddies) save.buddies = [];
   if (!save.history) save.history = [];
+  if (!save.planets) save.planets = {};
+  seedPlanets(save); // backfill records for any planets/galaxies the save predates
+  return save;
+}
+
+// Ensure every planet (across all galaxies) has a record, without disturbing
+// existing progress. Each galaxy's first planet is unlocked.
+function seedPlanets(save) {
   for (const p of PLANETS) {
     if (!save.planets[p.id]) {
-      save.planets[p.id] = { unlocked: p.id === 'L1', cleared: false, bestAcc: 0, bestAvgMs: null, stars: 0 };
+      save.planets[p.id] = { unlocked: STARTERS.has(p.id), cleared: false, bestAcc: 0, bestAvgMs: null, stars: 0 };
     }
   }
-  return save;
 }
 
 export function persist(save) {
@@ -112,13 +120,17 @@ export function pickPracticeFact(save, planetId, avoidKey) {
   return makeQuestion(key);
 }
 
-// Build a randomized-orientation question from a canonical key.
+// Build a question from a fact key. For commutative operations we randomize the
+// orientation so the child sees both 3×7 and 7×3; subtraction keeps its order.
 export function makeQuestion(key) {
-  const { a, b, answer } = parseFactKey(key);
-  // Randomly flip orientation so the child sees both 3×7 and 7×3.
-  const flip = Math.floor(Math.abs(Math.sin(a * 99 + b * 17 + Date.now())) * 2) % 2 === 0;
-  const [x, y] = flip ? [a, b] : [b, a];
-  return { key, a: x, b: y, answer };
+  const { op, a, b, answer } = parseFactKey(key);
+  const O = OPERATIONS[op];
+  let x = a, y = b;
+  if (O.commutative) {
+    const flip = Math.floor(Math.abs(Math.sin(a * 99 + b * 17 + Date.now())) * 2) % 2 === 0;
+    [x, y] = flip ? [a, b] : [b, a];
+  }
+  return { key, a: x, b: y, answer, op, symbol: O.symbol, word: O.word };
 }
 
 // Build a fixed, shuffled test set for a planet.
@@ -191,13 +203,14 @@ export function gradeTest(save, planetId, results) {
   if (cleared && !rec.cleared) {
     rec.cleared = true;
     newlyCleared = true;
-    // Award a buddy.
-    const idx = PLANETS.findIndex((p) => p.id === planetId);
-    buddy = BUDDIES[idx % BUDDIES.length];
+    // Award a buddy (one distinct buddy per planet).
+    buddy = buddyForPlanet(planetId);
     if (!save.buddies.includes(buddy)) save.buddies.push(buddy);
-    // Unlock next planet.
-    if (idx + 1 < PLANETS.length) {
-      const next = PLANETS[idx + 1].id;
+    // Unlock the next planet IN THE SAME GALAXY.
+    const planets = galaxyOfPlanet(planetId)?.planets || [];
+    const idx = planets.findIndex((p) => p.id === planetId);
+    if (idx >= 0 && idx + 1 < planets.length) {
+      const next = planets[idx + 1].id;
       save.planets[next].unlocked = true;
       unlockedNext = next;
     }
@@ -228,18 +241,34 @@ export function xpLevel(xp) {
   return { rank, into, need: 150, pct: Math.round((into / 150) * 100) };
 }
 
-// Full 13×13 mastery grid (0..12) for the stats heatmap.
-export function masteryGrid(save) {
-  const grid = [];
-  for (let a = 0; a <= 12; a++) {
-    const row = [];
-    for (let b = 0; b <= 12; b++) {
-      const f = save.facts[factKey(a, b)];
-      row.push({ a, b, answer: a * b, box: f ? f.box : 0, ema: f?.ema ?? null, att: f?.att ?? 0 });
-    }
-    grid.push(row);
-  }
-  return grid;
+// Mastery grid for the stats heatmap, per operation. Rows/cols and validity vary
+// by operation (subtraction is a minuend×subtrahend triangle).
+const GRID_SPEC = {
+  mul: { rows: [0, 12], cols: [0, 12], valid: () => true },
+  add: { rows: [0, 10], cols: [0, 10], valid: () => true },
+  sub: { rows: [0, 20], cols: [0, 10], valid: (m, s) => m - s >= 0 && m - s <= 10 },
+};
+
+export function masteryGrid(save, op = 'mul') {
+  const O = OPERATIONS[op];
+  const spec = GRID_SPEC[op];
+  const rows = rangeArr(spec.rows[0], spec.rows[1]);
+  const cols = rangeArr(spec.cols[0], spec.cols[1]);
+  const cells = rows.map((r) => cols.map((c) => {
+    if (!spec.valid(r, c)) return { r, c, valid: false };
+    const f = save.facts[factKey(op, r, c)];
+    return {
+      r, c, valid: true, answer: O.compute(r, c),
+      box: f ? f.box : 0, ema: f?.ema ?? null, att: f?.att ?? 0,
+    };
+  }));
+  return { op, symbol: O.symbol, rows, cols, cells };
+}
+
+function rangeArr(lo, hi) {
+  const out = [];
+  for (let i = lo; i <= hi; i++) out.push(i);
+  return out;
 }
 
 // --- small utilities ---

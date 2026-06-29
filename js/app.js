@@ -1,6 +1,9 @@
 // app.js — UI controller. Ties the engine, speech, and DOM together.
 
-import { PLANETS, BUDDIES, factsForPlanet } from './levels.js';
+import {
+  PLANETS, GALAXIES, OPERATIONS, factsForPlanet,
+  planetById, planetsOfGalaxy, galaxyOf, galaxyOfPlanet, buddyForPlanet,
+} from './levels.js';
 import * as E from './engine.js';
 import { ttsSupported, hasVoices, speak } from './tts.js';
 import { VoskMic, prefetchModel, buildModel } from './vosk-engine.js';
@@ -41,6 +44,9 @@ const state = {
   mic: null,        // the on-device Vosk recognizer (null where unsupported)
   screen: 'home',
   play: null,
+  currentGalaxy: 'mul', // which operation's map we're in
+  currentPlanet: null,
+  statsGalaxy: 'mul',   // which galaxy's heatmap the stats screen is showing
   audioCtx: null,
   wakeLock: null,
   lastMicCommitAt: 0,   // suppress trailing recognizer results after a voice answer
@@ -161,6 +167,7 @@ function bindGlobal() {
 
 function navTo(screen) {
   // hop screens, refreshing whatever the destination needs
+  if (screen === 'galaxy') renderGalaxySelect();
   if (screen === 'map') renderMap();
   if (screen === 'stats') renderStats();
   if (screen === 'settings') renderSettings();
@@ -184,10 +191,10 @@ function bindHome() {
     state.save = E.newSave(name);
     E.persist(state.save);
     renderHome(true);
-    navTo('map');
+    navTo('galaxy');
   });
-  $('#btn-continue').addEventListener('click', () => navTo('map'));
-  $('#link-map').addEventListener('click', () => navTo('map'));
+  $('#btn-continue').addEventListener('click', () => navTo('galaxy'));
+  $('#link-map').addEventListener('click', () => navTo('galaxy'));
   $('#link-stats').addEventListener('click', () => navTo('stats'));
   $('#link-settings').addEventListener('click', () => navTo('settings'));
 }
@@ -204,13 +211,43 @@ function renderHome(returning) {
 }
 
 // ===========================================================================
+// Galaxy select — choose which operation to practice
+// ===========================================================================
+function renderGalaxySelect() {
+  const wrap = $('#galaxy-cards');
+  wrap.innerHTML = '';
+  for (const g of GALAXIES) {
+    const planets = g.planets;
+    const cleared = planets.filter((p) => state.save.planets[p.id]?.cleared).length;
+    const pct = Math.round((cleared / planets.length) * 100);
+    const node = document.createElement('button');
+    node.type = 'button';
+    node.className = 'galaxy-card';
+    node.style.setProperty('--gx', g.color);
+    node.innerHTML = `
+      <span class="gx-emoji">${g.emoji}</span>
+      <div class="gx-body">
+        <div class="gx-name">${g.name}</div>
+        <div class="gx-sub">${g.tagline}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="gx-prog">${cleared} / ${planets.length} planets cleared</div>
+      </div>`;
+    node.addEventListener('click', () => { state.currentGalaxy = g.op; navTo('map'); });
+    wrap.appendChild(node);
+  }
+}
+
+// ===========================================================================
 // Map
 // ===========================================================================
 function renderMap() {
+  const galaxy = galaxyOf(state.currentGalaxy) || GALAXIES[0];
+  const planets = galaxy.planets;
+  $('#map-title').textContent = `${galaxy.name} Map`;
   const track = $('#planet-track');
   track.innerHTML = '';
-  const currentId = firstUncleared();
-  for (const p of PLANETS) {
+  const currentId = firstUncleared(planets);
+  for (const p of planets) {
     const rec = state.save.planets[p.id];
     const node = document.createElement('div');
     node.className = 'planet-node';
@@ -231,9 +268,9 @@ function renderMap() {
   }
 }
 
-function firstUncleared() {
-  const p = PLANETS.find((p) => !state.save.planets[p.id].cleared && state.save.planets[p.id].unlocked);
-  return p ? p.id : PLANETS[PLANETS.length - 1].id;
+function firstUncleared(planets) {
+  const p = planets.find((p) => !state.save.planets[p.id].cleared && state.save.planets[p.id].unlocked);
+  return p ? p.id : planets[planets.length - 1].id;
 }
 
 function starStr(n) { return '★★★☆☆☆'.slice(3 - n, 6 - n) || '☆☆☆'; }
@@ -242,7 +279,9 @@ function starStr(n) { return '★★★☆☆☆'.slice(3 - n, 6 - n) || '☆☆
 // Planet detail
 // ===========================================================================
 function openPlanet(planetId) {
-  const p = PLANETS.find((x) => x.id === planetId);
+  const p = planetById(planetId);
+  const galaxy = galaxyOfPlanet(planetId);
+  if (galaxy) state.currentGalaxy = galaxy.op;
   const rec = state.save.planets[planetId];
   state.currentPlanet = planetId;
   $('#planet-title').textContent = p.name;
@@ -351,6 +390,7 @@ async function nextQuestion() {
   play.locked = true; // stays locked until prompt finished
 
   $('#q-a').textContent = play.question.a;
+  $('#q-op').textContent = play.question.symbol;
   $('#q-b').textContent = play.question.b;
   setSlot('?');
   $('#answer-slot').classList.remove('filled');
@@ -362,7 +402,7 @@ async function nextQuestion() {
 
   // Optional spoken prompt (mutes mic while talking).
   if (state.save.settings.voicePrompts && hasVoices()) {
-    await speak(`What is ${play.question.a} times ${play.question.b}?`, { mic: state.mic });
+    await speak(`What is ${play.question.a} ${play.question.word} ${play.question.b}?`, { mic: state.mic });
   }
 
   play.startedAt = performance.now(); // silent timer — never shown as a clock
@@ -496,7 +536,7 @@ function commit(value, viaMic = false) {
     setFeedback(`It's ${play.expected}. You'll get it next time! 💪`, 'soft shake');
     beep(false);
     if (state.save.settings.voicePrompts && hasVoices()) {
-      speak(`${play.question.a} times ${play.question.b} is ${play.expected}`, { mic: state.mic });
+      speak(`${play.question.a} ${play.question.word} ${play.question.b} is ${play.expected}`, { mic: state.mic });
     }
     setTimeout(advance, 1700);
   }
@@ -514,7 +554,7 @@ function advance() {
 function showHint() {
   const play = state.play;
   if (!play) return;
-  const p = PLANETS.find((x) => x.id === play.planetId);
+  const p = planetById(play.planetId);
   setFeedback('💡 ' + p.hint, '');
 }
 
@@ -636,34 +676,55 @@ function renderStats() {
     tile(`${s.buddies.length}`, 'buddies'),
   ].join('');
 
-  // buddy collection (locked silhouettes for not-yet-earned)
+  // buddy collection (locked silhouettes for not-yet-earned), one per planet
   const bc = $('#buddy-collection');
-  bc.innerHTML = PLANETS.map((p, i) => {
-    const b = BUDDIES[i % BUDDIES.length];
+  bc.innerHTML = PLANETS.map((p) => {
+    const b = buddyForPlanet(p.id);
     const have = s.buddies.includes(b) && s.planets[p.id].cleared;
     return `<span class="${have ? '' : 'locked-buddy'}" title="${p.name}">${have ? b : '❔'}</span>`;
   }).join('');
 
-  renderHeatmap();
+  state.statsGalaxy = state.currentGalaxy;
+  renderStatsGalaxyTabs();
+  renderHeatmap(state.statsGalaxy);
 }
 
 function tile(big, lbl) {
   return `<div class="stat-tile"><div class="big">${big}</div><div class="lbl">${lbl}</div></div>`;
 }
 
-function renderHeatmap() {
-  const grid = E.masteryGrid(state.save);
-  const hm = $('#heatmap');
-  let html = '<div class="hc head">×</div>';
-  for (let b = 0; b <= 12; b++) html += `<div class="hc head">${b}</div>`;
-  for (let a = 0; a <= 12; a++) {
-    html += `<div class="hc head">${a}</div>`;
-    for (let b = 0; b <= 12; b++) {
-      const cell = grid[a][b];
-      const box = Math.max(0, Math.min(5, cell.box));
-      html += `<div class="hc b${box}" title="${a}×${b}=${cell.answer}">${cell.answer}</div>`;
-    }
+function renderStatsGalaxyTabs() {
+  const wrap = $('#stats-gal-tabs');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  for (const g of GALAXIES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'op-chip' + (g.op === state.statsGalaxy ? ' on' : '');
+    b.textContent = `${g.emoji} ${g.name}`;
+    b.addEventListener('click', () => {
+      state.statsGalaxy = g.op;
+      renderStatsGalaxyTabs();
+      renderHeatmap(g.op);
+    });
+    wrap.appendChild(b);
   }
+}
+
+function renderHeatmap(op = 'mul') {
+  const g = E.masteryGrid(state.save, op);
+  const hm = $('#heatmap');
+  hm.style.gridTemplateColumns = `repeat(${g.cols.length + 1}, 1fr)`;
+  let html = `<div class="hc head">${g.symbol}</div>`;
+  for (const c of g.cols) html += `<div class="hc head">${c}</div>`;
+  g.cells.forEach((row, i) => {
+    html += `<div class="hc head">${g.rows[i]}</div>`;
+    for (const cell of row) {
+      if (!cell.valid) { html += '<div class="hc empty"></div>'; continue; }
+      const box = Math.max(0, Math.min(5, cell.box));
+      html += `<div class="hc b${box}" title="${cell.r}${g.symbol}${cell.c}=${cell.answer}">${cell.answer}</div>`;
+    }
+  });
   hm.innerHTML = html;
 }
 
@@ -805,7 +866,8 @@ const mp = {
   mod: null,        // the lazily-imported multiplayer module
   session: null,    // active Session (host or guest)
   mode: null,       // 'host' | 'guest'
-  tables: new Set(),// host's chosen times tables
+  op: 'mul',        // host's chosen operation
+  numbers: new Set(),// host's chosen numbers (multiplicands / addends / subtrahends)
   phase: 'lobby',
   qIndex: -1,
   tShown: 0,        // performance.now() when the current question painted (fairness clock)
@@ -876,7 +938,9 @@ async function hostCreate() {
     $('#room-code').textContent = code;
     $('#host-setup').classList.remove('hidden');
     $('#guest-wait').classList.add('hidden');
-    buildTableChips();
+    mp.op = 'mul';
+    buildOpChips();
+    buildNumberChips(mp.op);
     showLobbyView('room');
   } catch (e) {
     alert(connectErr(e));
@@ -923,24 +987,57 @@ function renderRoster(list) {
   if (mp.mode === 'host') {
     const others = list.filter((p) => !p.isSelf).length;
     const btn = $('#btn-start-match');
-    if (btn) btn.disabled = others < 1 || mp.tables.size === 0;
+    if (btn) btn.disabled = others < 1 || mp.numbers.size === 0;
     $('#start-hint').textContent = others < 1
       ? 'Waiting for at least one friend to join…'
-      : (mp.tables.size === 0 ? 'Pick at least one times table.' : `${others + 1} players ready!`);
+      : (mp.numbers.size === 0 ? 'Pick at least one number.' : `${others + 1} players ready!`);
   }
 }
 
-function buildTableChips() {
-  const wrap = $('#table-chips');
+// Lobby number selection per operation.
+const MP_NUMBER_RANGE = { mul: [1, 12], add: [0, 10], sub: [0, 10] };
+const MP_DEFAULT = { mul: [2, 5, 10], add: [2, 5, 10], sub: [2, 5, 10] };
+const MP_CHIPS_LABEL = {
+  mul: 'Pick the times tables',
+  add: 'Pick the addition numbers',
+  sub: 'Pick the subtraction numbers',
+};
+
+function buildOpChips() {
+  const wrap = $('#op-chips');
+  if (!wrap) return;
   wrap.innerHTML = '';
-  mp.tables = new Set([2, 5, 10]); // a friendly default selection
-  for (let t = 1; t <= 12; t++) {
+  for (const g of GALAXIES) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'table-chip' + (mp.tables.has(t) ? ' on' : '');
-    b.textContent = `×${t}`;
+    b.className = 'op-chip' + (g.op === mp.op ? ' on' : '');
+    b.textContent = `${g.emoji} ${g.name}`;
     b.addEventListener('click', () => {
-      if (mp.tables.has(t)) mp.tables.delete(t); else mp.tables.add(t);
+      if (mp.op === g.op) return;
+      mp.op = g.op;
+      buildOpChips();
+      buildNumberChips(mp.op);
+      renderRoster(mp.session ? mp.session.players() : []);
+    });
+    wrap.appendChild(b);
+  }
+}
+
+function buildNumberChips(op) {
+  const wrap = $('#table-chips');
+  wrap.innerHTML = '';
+  const label = $('#chips-label');
+  if (label) label.textContent = MP_CHIPS_LABEL[op];
+  const sym = OPERATIONS[op].symbol;
+  const [lo, hi] = MP_NUMBER_RANGE[op];
+  mp.numbers = new Set(MP_DEFAULT[op].filter((n) => n >= lo && n <= hi)); // a friendly default
+  for (let n = lo; n <= hi; n++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'table-chip' + (mp.numbers.has(n) ? ' on' : '');
+    b.textContent = `${sym}${n}`;
+    b.addEventListener('click', () => {
+      if (mp.numbers.has(n)) mp.numbers.delete(n); else mp.numbers.add(n);
       b.classList.toggle('on');
       // re-evaluate the start button
       renderRoster(mp.session ? mp.session.players() : []);
@@ -950,8 +1047,8 @@ function buildTableChips() {
 }
 
 function startMatch() {
-  if (!mp.session || mp.mode !== 'host' || !mp.tables.size) return;
-  mp.session.start([...mp.tables].sort((a, b) => a - b));
+  if (!mp.session || mp.mode !== 'host' || !mp.numbers.size) return;
+  mp.session.start([...mp.numbers].sort((a, b) => a - b), undefined, mp.op);
 }
 
 // ---- render host-authoritative match snapshots ----
@@ -1002,7 +1099,11 @@ function renderVersusQuestion(snap) {
     mp.answered = false;
     mp.locked = false;
     const q = mp.session.currentQuestion();
-    if (q) { $('#vq-a').textContent = q.a; $('#vq-b').textContent = q.b; }
+    if (q) {
+      $('#vq-a').textContent = q.a;
+      $('#vq-op').textContent = q.symbol || '×';
+      $('#vq-b').textContent = q.b;
+    }
     $('#versus-slot').textContent = '?';
     $('#versus-slot').classList.remove('filled');
     $('#versus-feedback').textContent = '';
