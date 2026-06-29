@@ -57,6 +57,7 @@ async function boot() {
   bindHome();
   bindPlay();
   bindStatsAndSettings();
+  bindChallenge();
   initPWA();
   initDebug();
 
@@ -392,6 +393,8 @@ function onKey(k) {
 function wireMic(mic) {
   mic.onDebug = (tag, info) => dbg(tag, info); // Vosk diagnostics (audio flow, raw text)
   mic.onHeard = (candidates, transcript, isFinal) => {
+    // In a multiplayer race the mic feeds the versus screen instead.
+    if (state.screen === 'versus') { versusHeard(candidates, transcript, isFinal); return; }
     const play = state.play;
     dbg('heard', `"${transcript}" → [${candidates.join(',')}] ${isFinal ? 'final' : 'partial'} expect=${play ? play.expected : '-'}${play && candidates.includes(play.expected) ? ' ✓MATCH' : ''}`);
     if (!play || play.locked || state.screen !== 'play') return;
@@ -790,6 +793,375 @@ function confettiBurst(count = 40) {
     if (alive && frame < 200) requestAnimationFrame(run);
     else ctx.clearRect(0, 0, c.width, c.height);
   })();
+}
+
+// ===========================================================================
+// Multiplayer "Challenge" mode (WebRTC, serverless — see js/multiplayer.js)
+// ===========================================================================
+// All P2P + match logic lives in js/multiplayer.js (lazy-loaded so solo/offline
+// play never pulls in the networking library). This controller just renders the
+// host-authoritative state it emits and bridges keypad/voice input into it.
+const mp = {
+  mod: null,        // the lazily-imported multiplayer module
+  session: null,    // active Session (host or guest)
+  mode: null,       // 'host' | 'guest'
+  tables: new Set(),// host's chosen times tables
+  phase: 'lobby',
+  qIndex: -1,
+  tShown: 0,        // performance.now() when the current question painted (fairness clock)
+  answerStr: '',
+  answered: false,  // submitted an answer this question
+  locked: false,    // answered wrong → locked out this question
+  count: 0,
+};
+
+async function ensureMp() {
+  if (!mp.mod) mp.mod = await import('./multiplayer.js');
+  return mp.mod;
+}
+
+function bindChallenge() {
+  const onBtn = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+
+  onBtn('#btn-challenge', openLobby);
+  onBtn('#btn-challenge-back', leaveChallenge);
+
+  onBtn('#btn-make-room', hostCreate);
+  onBtn('#btn-join-room', () => showLobbyView('join'));
+  onBtn('#btn-join-cancel', () => showLobbyView('choose'));
+  onBtn('#btn-join-go', guestJoin);
+  onBtn('#btn-start-match', startMatch);
+
+  onBtn('#btn-quit-versus', leaveChallenge);
+  onBtn('#btn-versus-home', leaveChallenge);
+  onBtn('#btn-rematch', () => { if (mp.session) mp.session.requestRematch(); });
+
+  // versus keypad
+  $$('#versus-keypad button').forEach((b) => b.addEventListener('click', () => onVersusKey(b.dataset.vk)));
+  $('#versus-mic-btn')?.addEventListener('click', toggleMic);
+  // physical keyboard
+  window.addEventListener('keydown', (e) => {
+    if (state.screen !== 'versus') return;
+    if (/[0-9]/.test(e.key)) onVersusKey(e.key);
+    else if (e.key === 'Enter') onVersusKey('enter');
+    else if (e.key === 'Backspace') onVersusKey('back');
+  });
+}
+
+function openLobby() {
+  showLobbyView('choose');
+  showScreen('challenge-lobby');
+}
+
+function showLobbyView(which) {
+  $('#lobby-choose').classList.toggle('hidden', which !== 'choose');
+  $('#lobby-join').classList.toggle('hidden', which !== 'join');
+  $('#lobby-room').classList.toggle('hidden', which !== 'room');
+}
+
+const challengeCallbacks = () => ({
+  onRoster: renderRoster,
+  onState: onVersusState,
+  onError: (msg) => { alert(msg); leaveChallenge(); },
+  onConnected: () => { $('#lobby-status').textContent = 'Connected! Share your code.'; },
+});
+
+async function hostCreate() {
+  try {
+    const M = await ensureMp();
+    const code = M.genCode();
+    mp.mode = 'host';
+    $('#lobby-status').textContent = 'Setting up…';
+    mp.session = await M.createRoom(code, { name: playerName(), callbacks: challengeCallbacks() });
+    $('#room-code').textContent = code;
+    $('#host-setup').classList.remove('hidden');
+    $('#guest-wait').classList.add('hidden');
+    buildTableChips();
+    showLobbyView('room');
+  } catch (e) {
+    alert(connectErr(e));
+    leaveChallenge();
+  }
+}
+
+async function guestJoin() {
+  const M = await ensureMp();
+  const code = M.normalizeCode($('#join-code').value);
+  if (code.length < 3) { $('#join-code').focus(); return; }
+  try {
+    mp.mode = 'guest';
+    $('#lobby-status').textContent = 'Connecting…';
+    mp.session = await M.joinRoom(code, { name: playerName(), callbacks: challengeCallbacks() });
+    $('#room-code').textContent = code;
+    $('#host-setup').classList.add('hidden');
+    $('#guest-wait').classList.remove('hidden');
+    showLobbyView('room');
+  } catch (e) {
+    alert(connectErr(e));
+    leaveChallenge();
+  }
+}
+
+function connectErr(e) {
+  return (e && e.message === 'offline')
+    ? 'Couldn’t reach the matchmaking service — multiplayer needs an internet connection.'
+    : 'Couldn’t connect. Check the code and your connection, then try again.';
+}
+
+function playerName() {
+  return (state.save && state.save.name) || $('#pilot-name')?.value.trim() || 'Player';
+}
+
+function renderRoster(list) {
+  const ul = $('#roster');
+  if (ul) {
+    ul.innerHTML = list.map((p) =>
+      `<li class="${p.isSelf ? 'me' : ''}">${p.isHost ? '👑 ' : ''}${escapeHtml(p.name)}${p.isSelf ? ' (you)' : ''}</li>`
+    ).join('');
+  }
+  // host: need at least one other player to start
+  if (mp.mode === 'host') {
+    const others = list.filter((p) => !p.isSelf).length;
+    const btn = $('#btn-start-match');
+    if (btn) btn.disabled = others < 1 || mp.tables.size === 0;
+    $('#start-hint').textContent = others < 1
+      ? 'Waiting for at least one friend to join…'
+      : (mp.tables.size === 0 ? 'Pick at least one times table.' : `${others + 1} players ready!`);
+  }
+}
+
+function buildTableChips() {
+  const wrap = $('#table-chips');
+  wrap.innerHTML = '';
+  mp.tables = new Set([2, 5, 10]); // a friendly default selection
+  for (let t = 1; t <= 12; t++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'table-chip' + (mp.tables.has(t) ? ' on' : '');
+    b.textContent = `×${t}`;
+    b.addEventListener('click', () => {
+      if (mp.tables.has(t)) mp.tables.delete(t); else mp.tables.add(t);
+      b.classList.toggle('on');
+      // re-evaluate the start button
+      renderRoster(mp.session ? mp.session.players() : []);
+    });
+    wrap.appendChild(b);
+  }
+}
+
+function startMatch() {
+  if (!mp.session || mp.mode !== 'host' || !mp.tables.size) return;
+  mp.session.start([...mp.tables].sort((a, b) => a - b));
+}
+
+// ---- render host-authoritative match snapshots ----
+function onVersusState(snap) {
+  mp.phase = snap.phase;
+  mp.count = snap.count || mp.count;
+
+  if (state.screen !== 'versus' && snap.phase !== 'ended') {
+    showScreen('versus');
+    requestWakeLock();
+  }
+
+  if (snap.phase === 'countdown') { runVersusCountdown(); return; }
+  if (snap.phase === 'question') { renderVersusQuestion(snap); return; }
+  if (snap.phase === 'reveal') { renderVersusReveal(snap); return; }
+  if (snap.phase === 'ended') { showVersusResult(snap); return; }
+}
+
+function runVersusCountdown() {
+  mp.qIndex = -1; // force the first question to register as new
+  if (mp._countdownTimer) clearInterval(mp._countdownTimer);
+  const tf = $('#versus-timer');
+  if (tf) { tf.style.transition = 'none'; tf.style.width = '100%'; }
+  $('#versus-countdown').classList.remove('hidden');
+  $('#versus-banner').textContent = '';
+  $('#versus-feedback').textContent = '';
+  $('#scoreboard').innerHTML = '';
+  let n = 3;
+  const el = $('#versus-countdown').firstElementChild;
+  el.textContent = n;
+  const tick = setInterval(() => {
+    n--;
+    if (n <= 0) { clearInterval(tick); el.textContent = 'Go!'; }
+    else el.textContent = n;
+  }, 1000);
+  mp._countdownTimer = tick;
+}
+
+function renderVersusQuestion(snap) {
+  $('#versus-countdown').classList.add('hidden');
+  renderScoreboard(snap);
+  $('#versus-progress').textContent = `Q ${snap.qIndex + 1} / ${snap.count}`;
+
+  // only reset local input state when a NEW question starts
+  if (snap.qIndex !== mp.qIndex) {
+    mp.qIndex = snap.qIndex;
+    mp.answerStr = '';
+    mp.answered = false;
+    mp.locked = false;
+    const q = mp.session.currentQuestion();
+    if (q) { $('#vq-a').textContent = q.a; $('#vq-b').textContent = q.b; }
+    $('#versus-slot').textContent = '?';
+    $('#versus-slot').classList.remove('filled');
+    $('#versus-feedback').textContent = '';
+    $('#versus-feedback').className = 'feedback';
+    $('#versus-banner').textContent = '';
+    setVersusInputEnabled(true);
+
+    // voice: each player may use their own mic if they have it on
+    const useMic = micEnabled();
+    $('#versus-mic-zone').style.display = useMic ? '' : 'none';
+    $('#versus-heard').textContent = useMic ? 'Say it or tap it!' : 'Tap your answer!';
+    if (useMic && !state.mic.listening) state.mic.start();
+
+    // FAIRNESS: stamp the clock at real paint, not at message receipt.
+    requestAnimationFrame(() => { mp.tShown = performance.now(); });
+    startVersusTimer();
+  }
+}
+
+// Skinny top bar that drains over the question's time limit (matches the host's
+// authoritative per-question timeout in multiplayer.js).
+function startVersusTimer() {
+  const fill = $('#versus-timer');
+  if (!fill) return;
+  const ms = (mp.mod && mp.mod.QUESTION_MS) || 15000;
+  fill.style.transition = 'none';
+  fill.style.width = '100%';
+  void fill.offsetWidth; // force reflow so the next change animates
+  fill.style.transition = `width ${ms}ms linear`;
+  fill.style.width = '0%';
+}
+function stopVersusTimer() {
+  const fill = $('#versus-timer');
+  if (!fill) return;
+  const w = getComputedStyle(fill).width;
+  fill.style.transition = 'none';
+  fill.style.width = w; // freeze wherever it is
+}
+
+function renderVersusReveal(snap) {
+  stopVersusTimer();
+  renderScoreboard(snap);
+  setVersusInputEnabled(false);
+  const r = snap.lastResult || {};
+  $('#versus-slot').textContent = r.answer != null ? r.answer : '?';
+  $('#versus-slot').classList.add('filled');
+  if (r.winnerId) {
+    const who = r.winnerId === mp.session.selfId ? 'You' : escapeHtml(mp.session.nameOf(r.winnerId));
+    $('#versus-banner').textContent = `🏅 ${who} got it first!`;
+  } else {
+    $('#versus-banner').textContent = `Nobody got it — it was ${r.answer}.`;
+  }
+}
+
+function renderScoreboard(snap) {
+  const board = $('#scoreboard');
+  if (!board || !snap.players) return;
+  const answered = new Set(snap.answered || []);
+  const locked = new Set(snap.locked || []);
+  const winner = snap.lastResult && snap.lastResult.winnerId;
+  board.classList.toggle('compact', snap.players.length > 4);
+  board.innerHTML = snap.players.map((p) => {
+    const tag = locked.has(p.id) ? '🔒' : (answered.has(p.id) ? '⚡' : '');
+    const me = p.id === mp.session.selfId ? ' me' : '';
+    const win = p.id === winner ? ' winner' : '';
+    return `<li class="${me}${win}"><span class="sb-name">${escapeHtml(p.name)}</span>` +
+           `<span class="sb-tag">${tag}</span><span class="sb-score">${p.score}</span></li>`;
+  }).join('');
+}
+
+// ---- versus input (keypad + voice) ----
+function setVersusInputEnabled(on) {
+  $('#versus-keypad').classList.toggle('disabled', !on);
+}
+
+function onVersusKey(k) {
+  if (mp.phase !== 'question' || mp.answered || mp.locked) return;
+  if (k === 'enter') { if (mp.answerStr !== '') submitVersus(parseInt(mp.answerStr, 10)); return; }
+  if (k === 'back') mp.answerStr = mp.answerStr.slice(0, -1);
+  else if (/^[0-9]$/.test(k)) { if (mp.answerStr.length < 3) mp.answerStr += k; }
+  $('#versus-slot').textContent = mp.answerStr === '' ? '?' : mp.answerStr;
+  $('#versus-slot').classList.toggle('filled', mp.answerStr !== '');
+}
+
+// Voice in a race mirrors solo: it only auto-submits a CORRECT answer (a mishear
+// never locks you out). A definite wrong answer only happens via the keypad ✓.
+function versusHeard(candidates) {
+  if (mp.phase !== 'question' || mp.answered || mp.locked) return;
+  const q = mp.session && mp.session.currentQuestion();
+  if (!q) return;
+  if (candidates.includes(q.answer)) submitVersus(q.answer);
+  else if (candidates.length) $('#versus-heard').innerHTML = `I heard <b>${candidates[0]}</b> 🤔`;
+}
+
+function submitVersus(value) {
+  if (mp.answered || mp.locked) return;
+  const q = mp.session.currentQuestion();
+  const correct = q && value === q.answer;
+  const reactionMs = performance.now() - mp.tShown;
+  mp.answered = true;
+  mp.session.submitAnswer(value, reactionMs);
+
+  $('#versus-slot').textContent = value;
+  $('#versus-slot').classList.add('filled');
+  if (correct) {
+    setFeedbackEl('#versus-feedback', pick(['Got it! ✅', 'Yes! ⚡', 'Boom! 💥']), 'good');
+    beep(true, true);
+    confettiBurst(18);
+  } else {
+    mp.locked = true;
+    setVersusInputEnabled(false);
+    setFeedbackEl('#versus-feedback', '❌ Locked out — wait for the answer.', 'soft shake');
+    beep(false);
+  }
+}
+
+function setFeedbackEl(sel, txt, cls = '') {
+  const el = $(sel);
+  if (!el) return;
+  el.textContent = txt;
+  el.className = 'feedback' + (cls ? ' ' + cls : '');
+}
+
+function showVersusResult(snap) {
+  if (mp._countdownTimer) clearInterval(mp._countdownTimer);
+  if (state.mic) state.mic.stop();
+  releaseWakeLock();
+  const standings = (snap.players || []).slice().sort((a, b) => b.score - a.score);
+  const top = standings[0] ? standings[0].score : 0;
+  const winners = standings.filter((p) => p.score === top);
+  const iWon = winners.some((p) => p.id === mp.session.selfId);
+  const tie = winners.length > 1;
+
+  $('#versus-result-burst').textContent = iWon ? '🏆' : (tie ? '🤝' : '🌟');
+  $('#versus-result-title').textContent = tie
+    ? "It's a tie!"
+    : (iWon ? 'You win! 🎉' : `${escapeHtml(standings[0].name)} wins!`);
+
+  $('#final-standings').innerHTML = standings.map((p, i) => {
+    const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+    const me = p.id === mp.session.selfId ? ' me' : '';
+    return `<li class="${me}"><span class="fs-rank">${medal}</span>` +
+           `<span class="fs-name">${escapeHtml(p.name)}${p.id === mp.session.selfId ? ' (you)' : ''}</span>` +
+           `<span class="fs-score">${p.score}</span></li>`;
+  }).join('');
+
+  // anyone can ask for a rematch; the host runs it
+  $('#btn-rematch').textContent = mp.mode === 'host' ? 'Rematch 🔁' : 'Ask for Rematch 🔁';
+  if (iWon) confettiBurst(120);
+  showScreen('versus-result');
+}
+
+function leaveChallenge() {
+  if (mp._countdownTimer) clearInterval(mp._countdownTimer);
+  if (state.mic) state.mic.stop();
+  releaseWakeLock();
+  if (mp.session) { try { mp.session.leave(); } catch (_) {} }
+  mp.session = null; mp.mode = null; mp.phase = 'lobby'; mp.qIndex = -1;
+  navTo('home');
 }
 
 // ===========================================================================

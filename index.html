@@ -59,6 +59,7 @@
           <span class="buddy-strip" id="home-buddies"></span>
         </div>
         <button class="btn big" id="btn-continue">Continue Journey ✨</button>
+        <button class="btn big alt" id="btn-challenge">Challenge Friends ⚔️</button>
         <div class="home-links">
           <button class="link" id="link-map">🗺️ Star Map</button>
           <button class="link" id="link-stats">📊 My Stats</button>
@@ -221,6 +222,121 @@
         </label>
         <button class="btn danger" id="btn-reset">🗑️ Reset all progress</button>
         <p class="set-note">Progress is saved only on this device, in this browser. No account needed.</p>
+      </div>
+    </section>
+
+    <!-- ============ CHALLENGE LOBBY ============ -->
+    <section class="screen" id="screen-challenge-lobby">
+      <header class="bar">
+        <button class="icon-btn" id="btn-challenge-back">‹ Home</button>
+        <h2>Challenge</h2>
+        <span style="width:48px"></span>
+      </header>
+
+      <!-- choose create or join -->
+      <div class="lobby-body" id="lobby-choose">
+        <p class="lobby-intro">Race your friends on the same Wi‑Fi (or anywhere)! No accounts — just share a code.</p>
+        <div class="lobby-pick">
+          <button class="btn big" id="btn-make-room">🚀 Start a Room</button>
+          <button class="btn alt" id="btn-join-room">🔑 Join a Room</button>
+        </div>
+      </div>
+
+      <!-- enter a code to join -->
+      <div class="lobby-body hidden" id="lobby-join">
+        <label class="lobby-label" for="join-code">Enter the room code</label>
+        <input id="join-code" class="code-input" type="text" inputmode="latin" autocapitalize="characters"
+               autocomplete="off" maxlength="8" placeholder="ABCD" />
+        <button class="btn big" id="btn-join-go">Join →</button>
+        <button class="link" id="btn-join-cancel">‹ Back</button>
+      </div>
+
+      <!-- connected room: code, roster, host controls -->
+      <div class="lobby-body hidden" id="lobby-room">
+        <div class="room-code-block" id="room-code-block">
+          <span class="room-code-label">Room code</span>
+          <span class="room-code" id="room-code">––––</span>
+          <span class="room-code-hint">Friends tap “Join a Room” and type this.</span>
+        </div>
+        <p class="lobby-status" id="lobby-status">Connecting…</p>
+
+        <h3 class="roster-title">Players</h3>
+        <ul class="roster" id="roster"></ul>
+
+        <!-- host-only: pick tables + start -->
+        <div class="host-setup hidden" id="host-setup">
+          <p class="lobby-label">Pick the times tables</p>
+          <div class="table-chips" id="table-chips"></div>
+          <button class="btn big" id="btn-start-match" disabled>Start Match 🏁</button>
+          <p class="set-note" id="start-hint">Waiting for at least one friend to join…</p>
+        </div>
+        <p class="lobby-status guest-wait hidden" id="guest-wait">Waiting for the host to start…</p>
+      </div>
+    </section>
+
+    <!-- ============ VERSUS (head-to-head play) ============ -->
+    <section class="screen" id="screen-versus">
+      <header class="bar play-bar">
+        <button class="icon-btn" id="btn-quit-versus">✕</button>
+        <div class="play-meta">
+          <span class="pill" id="versus-progress">Q 1 / 10</span>
+        </div>
+        <span style="width:48px"></span>
+      </header>
+
+      <!-- skinny per-question countdown timer -->
+      <div class="versus-timer-track"><div class="versus-timer-fill" id="versus-timer"></div></div>
+
+      <!-- countdown overlay before the first question -->
+      <div class="versus-countdown hidden" id="versus-countdown"><span>3</span></div>
+
+      <div class="play-stage">
+        <div class="versus-banner" id="versus-banner"></div>
+        <div class="question" id="versus-question">
+          <span id="vq-a">6</span>
+          <span class="times">×</span>
+          <span id="vq-b">7</span>
+          <span class="eq">=</span>
+          <span class="answer-slot" id="versus-slot">?</span>
+        </div>
+
+        <div class="feedback" id="versus-feedback"></div>
+
+        <!-- mic (only when the player chooses voice) -->
+        <div class="mic-zone" id="versus-mic-zone">
+          <button class="mic-btn" id="versus-mic-btn" aria-label="Microphone">
+            <span class="mic-glyph">🎤</span>
+            <span class="mic-rings"></span>
+          </button>
+          <p class="heard" id="versus-heard">Tap a number or use the mic!</p>
+        </div>
+
+        <div class="keypad" id="versus-keypad">
+          <button data-vk="1">1</button><button data-vk="2">2</button><button data-vk="3">3</button>
+          <button data-vk="4">4</button><button data-vk="5">5</button><button data-vk="6">6</button>
+          <button data-vk="7">7</button><button data-vk="8">8</button><button data-vk="9">9</button>
+          <button data-vk="back" class="key-fn">⌫</button>
+          <button data-vk="0">0</button>
+          <button data-vk="enter" class="key-fn go">✓</button>
+        </div>
+      </div>
+
+      <!-- live scoreboard: its own scrolling container so it can't crowd the answer -->
+      <div class="scoreboard-wrap">
+        <ol class="scoreboard" id="scoreboard"></ol>
+      </div>
+    </section>
+
+    <!-- ============ VERSUS RESULT ============ -->
+    <section class="screen" id="screen-versus-result">
+      <div class="result-card">
+        <div class="result-burst" id="versus-result-burst">🏆</div>
+        <h2 id="versus-result-title">Winner!</h2>
+        <ol class="final-standings" id="final-standings"></ol>
+        <div class="result-actions">
+          <button class="btn" id="btn-rematch">Rematch 🔁</button>
+          <button class="btn alt" id="btn-versus-home">Home 🏠</button>
+        </div>
       </div>
     </section>
 

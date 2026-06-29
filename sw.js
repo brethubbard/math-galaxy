@@ -13,7 +13,7 @@
 // activate, so bumping the shell version never forces a model re-download, and
 // the global caches.match() below serves it to vosk-browser's worker offline.
 
-const CACHE = 'math-galaxy-v5';
+const CACHE = 'math-galaxy-v6';
 const MODEL_CACHE = 'math-galaxy-model';
 
 // Paths are relative to this file's location, so it works under any base path
@@ -29,6 +29,7 @@ const CORE = [
   './js/numbers.js',
   './js/tts.js',
   './js/vosk-engine.js',
+  './js/multiplayer.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
