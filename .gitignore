@@ -3,3 +3,4 @@
 /*.png
 node_modules/
 models/*.wav
+package-lock.json
