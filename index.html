@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0b1026" />
-  <title>Math Galaxy 🚀 — Times Table Adventure</title>
-  <meta name="description" content="A whimsy-filled space adventure for mastering multiplication facts — practice and test by voice or tap." />
+  <title>Math Galaxy 🚀 — Math Facts Adventure</title>
+  <meta name="description" content="A whimsy-filled space adventure for mastering math facts — multiplication, addition, and subtraction — by voice or tap." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
   <!-- PWA: installable + offline -->
   <link rel="manifest" href="manifest.webmanifest" />
@@ -42,7 +42,7 @@
       <div class="home-hero">
         <div class="mascot" id="home-mascot">🚀</div>
         <h1 class="logo">Math <span>Galaxy</span></h1>
-        <p class="tagline">Blast through the times tables, one planet at a time!</p>
+        <p class="tagline">Blast through your math facts, one planet at a time!</p>
         <button class="btn-install hidden" id="btn-install">⬇️ Install app</button>
       </div>
 
@@ -68,11 +68,22 @@
       </div>
     </section>
 
+    <!-- ============ GALAXY SELECT ============ -->
+    <section class="screen" id="screen-galaxy">
+      <header class="bar">
+        <button class="icon-btn" data-nav="home">‹ Home</button>
+        <h2>Choose a Galaxy</h2>
+        <button class="icon-btn" data-nav="stats">📊</button>
+      </header>
+      <p class="map-intro">Pick what you want to practice — each galaxy has its own planets to explore!</p>
+      <div class="galaxy-cards" id="galaxy-cards"></div>
+    </section>
+
     <!-- ============ MAP ============ -->
     <section class="screen" id="screen-map">
       <header class="bar">
-        <button class="icon-btn" data-nav="home">‹ Home</button>
-        <h2>Star Map</h2>
+        <button class="icon-btn" data-nav="galaxy">‹ Galaxies</button>
+        <h2 id="map-title">Star Map</h2>
         <button class="icon-btn" data-nav="stats">📊</button>
       </header>
       <p class="map-intro">Pick a planet to explore. Clear its <b>test</b> to unlock the next one!</p>
@@ -122,7 +133,7 @@
         <div class="buddy-cheer" id="buddy-cheer">⭐</div>
         <div class="question" id="question">
           <span id="q-a">6</span>
-          <span class="times">×</span>
+          <span class="times" id="q-op">×</span>
           <span id="q-b">7</span>
           <span class="eq">=</span>
           <span class="answer-slot" id="answer-slot">?</span>
@@ -184,6 +195,7 @@
         <h3>My Buddies</h3>
         <div class="buddy-collection" id="buddy-collection"></div>
         <h3>Fact Power Grid</h3>
+        <div class="op-chips stats-gal-tabs" id="stats-gal-tabs"></div>
         <p class="grid-legend">
           <span class="lg lg0"></span>new
           <span class="lg lg2"></span>learning
@@ -263,9 +275,11 @@
         <h3 class="roster-title">Players</h3>
         <ul class="roster" id="roster"></ul>
 
-        <!-- host-only: pick tables + start -->
+        <!-- host-only: pick operation + numbers + start -->
         <div class="host-setup hidden" id="host-setup">
-          <p class="lobby-label">Pick the times tables</p>
+          <p class="lobby-label">Pick the operation</p>
+          <div class="op-chips" id="op-chips"></div>
+          <p class="lobby-label" id="chips-label">Pick the times tables</p>
           <div class="table-chips" id="table-chips"></div>
           <button class="btn big" id="btn-start-match" disabled>Start Match 🏁</button>
           <p class="set-note" id="start-hint">Waiting for at least one friend to join…</p>
@@ -294,7 +308,7 @@
         <div class="versus-banner" id="versus-banner"></div>
         <div class="question" id="versus-question">
           <span id="vq-a">6</span>
-          <span class="times">×</span>
+          <span class="times" id="vq-op">×</span>
           <span id="vq-b">7</span>
           <span class="eq">=</span>
           <span class="answer-slot" id="versus-slot">?</span>

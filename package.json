@@ -1,14 +1,16 @@
 {
   "name": "math-galaxy",
   "version": "1.0.0",
-  "description": "A whimsical, voice-first multiplication-fact fluency game (static PWA).",
+  "description": "A whimsical, voice-first math-fact fluency game — multiplication, addition, and subtraction (static PWA).",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "node tests/e2e.mjs"
   },
   "devDependencies": {
+    "playwright": "^1.61.1",
     "vitest": "^2.1.8"
   }
 }

@@ -1,7 +1,7 @@
 {
-  "name": "Math Galaxy — Times Table Adventure",
+  "name": "Math Galaxy — Math Facts Adventure",
   "short_name": "Math Galaxy",
-  "description": "A whimsical space adventure for mastering multiplication facts by voice or tap.",
+  "description": "A whimsical space adventure for mastering math facts — multiplication, addition, and subtraction — by voice or tap.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

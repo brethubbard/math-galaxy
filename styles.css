@@ -127,6 +127,33 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 .planet-node .pn-lock { font-size: 1.4rem; }
 .planet-node.cleared .pn-name::after { content: ' ✓'; color: var(--good); }
 
+/* ---------- galaxy select ---------- */
+.galaxy-cards { display: flex; flex-direction: column; gap: 14px; }
+.galaxy-card {
+  display: flex; align-items: center; gap: 16px; padding: 16px 18px; width: 100%;
+  text-align: left; font-family: var(--font); color: var(--ink); cursor: pointer;
+  background: var(--card); border: 1px solid var(--card-edge);
+  border-left: 6px solid var(--gx, var(--accent)); border-radius: var(--radius);
+  transition: transform .1s ease;
+}
+.galaxy-card:active { transform: scale(.98); }
+.galaxy-card .gx-emoji { font-size: 2.6rem; flex: 0 0 auto; }
+.galaxy-card .gx-body { flex: 1; }
+.galaxy-card .gx-name { font-size: 1.25rem; font-weight: 700; }
+.galaxy-card .gx-sub { font-size: .85rem; color: var(--ink-dim); margin-bottom: 8px; }
+.galaxy-card .gx-prog { font-size: .8rem; color: var(--ink-dim); margin-top: 6px; }
+
+/* ---------- operation chips (lobby + stats) ---------- */
+.op-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+.op-chip {
+  font-family: var(--font); font-weight: 700; font-size: .95rem; padding: 10px 14px;
+  border-radius: 999px; cursor: pointer; color: var(--ink);
+  background: rgba(255,255,255,.07); border: 2px solid var(--card-edge); transition: transform .08s;
+}
+.op-chip:active { transform: scale(.94); }
+.op-chip.on { background: linear-gradient(180deg, #8af0d6, var(--accent2)); color: #143; border-color: transparent; }
+.stats-gal-tabs { justify-content: center; }
+
 /* ---------- planet detail ---------- */
 .planet-detail { text-align: center; padding: 10px; }
 .planet-big { font-size: 6rem; animation: float 4s ease-in-out infinite; }
@@ -267,6 +294,7 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 .heatmap .hc.b3 { background: #5277c9; }
 .heatmap .hc.b4 { background: #4f9dde; }
 .heatmap .hc.b5 { background: var(--good); color: #0b3; }
+.heatmap .hc.empty { background: none; }
 
 /* ---------- settings ---------- */
 .settings-body { display: flex; flex-direction: column; gap: 14px; }

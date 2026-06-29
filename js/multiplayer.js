@@ -17,7 +17,7 @@
 // screen to when that player answers (performance.now(), a monotonic clock). The
 // host compares those reaction times; the smallest correct one wins the point.
 
-import { factKey } from './levels.js';
+import { factKey, OPERATIONS } from './levels.js';
 
 // Trystero's Nostr strategy: signaling over public Nostr relays. Pinned version.
 const TRYSTERO_URL = 'https://esm.sh/trystero@0.21.4/nostr';
@@ -52,26 +52,45 @@ function mulberry32(a) {
   };
 }
 
-// Build the shared question list from {tables, count, seed}. Runs identically on
-// every device (same seed → same questions), so we ship only the seed, not a list.
-export function buildQuestions(tables, count, seed) {
-  const tbls = (tables && tables.length) ? tables : [2, 3, 4, 5];
+// Friendly default number selection per operation when the host picks none.
+const DEFAULT_SELECTION = { mul: [2, 3, 4, 5], add: [2, 3, 4, 5], sub: [2, 3, 4, 5] };
+
+// Build the shared question list from {selection, count, seed, op}. Runs
+// identically on every device (same seed → same questions), so we ship only the
+// seed, not a list. `op` is last with a default so older 3-arg callers still work.
+export function buildQuestions(selection, count, seed, op = 'mul') {
+  const O = OPERATIONS[op] || OPERATIONS.mul;
+  const sel = (selection && selection.length) ? selection : DEFAULT_SELECTION[op];
   const rng = mulberry32(seed >>> 0);
   const qs = [];
   let lastKey = '';
   let guard = 0;
   while (qs.length < count) {
-    const t = tbls[Math.floor(rng() * tbls.length)];
-    const o = Math.floor(rng() * 13); // 0..12
-    const key = factKey(t, o);
+    const { a, b } = pickPair(op, sel, rng);
+    const key = factKey(op, a, b);
     if (key === lastKey && guard < 20) { guard++; continue; } // avoid back-to-back repeats
     guard = 0; lastKey = key;
-    const flip = rng() < 0.5;
-    const a = flip ? o : t;
-    const b = flip ? t : o;
-    qs.push({ a, b, answer: a * b });
+    qs.push({ a, b, answer: O.compute(a, b), op, symbol: O.symbol });
   }
   return qs;
+}
+
+// Pick one (a, b) pair for the operation. Commutative ops randomize orientation;
+// subtraction picks a subtrahend from the selection and a valid minuend so the
+// difference is always 0..10 (never negative).
+function pickPair(op, sel, rng) {
+  const pickFrom = (arr) => arr[Math.floor(rng() * arr.length)];
+  if (op === 'sub') {
+    const s = pickFrom(sel);
+    const dMax = Math.min(10, 20 - s);
+    const d = Math.floor(rng() * (dMax + 1));
+    return { a: s + d, b: s };
+  }
+  const hi = op === 'add' ? 10 : 12;
+  const t = pickFrom(sel);
+  const o = Math.floor(rng() * (hi + 1));
+  const flip = rng() < 0.5;
+  return { a: flip ? o : t, b: flip ? t : o };
 }
 
 // ---------------------------------------------------------------------------
@@ -184,12 +203,12 @@ export class Session {
   }
 
   // --- host: start / rematch ---
-  start(tables, count = DEFAULT_COUNT) {
+  start(selection, count = DEFAULT_COUNT, op = 'mul') {
     if (!this.isHost) return;
     const others = [...this.roster.keys()].filter((id) => id !== this.selfId);
     if (!others.length) { this._fail('Need at least one more player to start.'); return; }
     const seed = (Math.floor(Math.random() * 0xffffffff)) >>> 0;
-    this._beginMatch(tables, count, seed);
+    this._beginMatch(selection, count, seed, op);
   }
 
   // Any player can ask for a rematch; only the host actually restarts.
@@ -203,24 +222,24 @@ export class Session {
     if (this._rematchLock) return;            // debounce duplicate requests from N guests
     this._rematchLock = true;
     setTimeout(() => { this._rematchLock = false; }, 1500);
-    const { tables, count } = this._match;
+    const { selection, count, op } = this._match;
     const seed = (Math.floor(Math.random() * 0xffffffff)) >>> 0;
-    this._beginMatch(tables, count, seed);
+    this._beginMatch(selection, count, seed, op);
   }
 
-  _beginMatch(tables, count, seed) {
+  _beginMatch(selection, count, seed, op = 'mul') {
     this._clearTimers();
-    this.questions = buildQuestions(tables, count, seed);
+    this.questions = buildQuestions(selection, count, seed, op);
     // Lock the roster for this match: everyone currently present is a player.
     const scores = new Map();
     for (const id of this.roster.keys()) scores.set(id, 0);
     this._match = {
-      tables, count, seed, qIndex: -1, scores,
+      selection, count, seed, op, qIndex: -1, scores,
       answered: new Set(), correct: [], locked: new Set(),
       graceTimer: null, qTimer: null, lastResult: null,
     };
     // Tell guests to generate the same questions and run the countdown.
-    this._sendGo({ tables, count, seed, host: this.selfId });
+    this._sendGo({ selection, count, seed, op, host: this.selfId });
     this._emit({ phase: 'countdown', qIndex: -1, count });
     this._timers.push(setTimeout(() => this._startQuestion(0), COUNTDOWN_MS));
   }
@@ -332,7 +351,7 @@ export class Session {
   _recvGo(data, peer) {
     if (this.isHost) return;
     this.hostId = (data && data.host) || peer;
-    this.questions = buildQuestions(data.tables, data.count, data.seed);
+    this.questions = buildQuestions(data.selection, data.count, data.seed, data.op || 'mul');
     this.cb.onState && this.cb.onState({ phase: 'countdown', qIndex: -1, count: data.count, players: [], answered: [], locked: [], lastResult: null });
   }
 
