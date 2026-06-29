@@ -138,12 +138,12 @@ const SUB_PLANETS = [
 ];
 
 export const GALAXIES = [
-  { id: 'mul', op: 'mul', name: 'Multiplication', emoji: '✖️', color: '#ffcc33',
-    tagline: 'Times tables, one planet at a time.', planets: MUL_PLANETS },
   { id: 'add', op: 'add', name: 'Addition', emoji: '➕', color: '#8ab4ff',
     tagline: 'Build lightning-fast sums.', planets: ADD_PLANETS },
   { id: 'sub', op: 'sub', name: 'Subtraction', emoji: '➖', color: '#ff9f7a',
     tagline: 'Take away without breaking a sweat.', planets: SUB_PLANETS },
+  { id: 'mul', op: 'mul', name: 'Multiplication', emoji: '✖️', color: '#ffcc33',
+    tagline: 'Times tables, one planet at a time.', planets: MUL_PLANETS },
 ];
 
 // Flat list of every planet across galaxies — used for save-record seeding,
