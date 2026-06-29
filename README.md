@@ -56,9 +56,25 @@ git remote add origin git@github.com:<you>/<repo>.git
 git push -u origin main
 ```
 
-Then in the repo: **Settings → Pages → Build and deployment → Source: Deploy from a
-branch → `main` / `/ (root)`**. Your app appears at `https://<you>.github.io/<repo>/`.
-(The included `.nojekyll` file tells Pages to serve the folder as-is.)
+Then point GitHub Pages at the bundled **GitHub Actions** workflow (`.github/workflows/deploy.yml`):
+**Settings → Pages → Build and deployment → Source: GitHub Actions**. From then on every push
+to `main` runs the test suite and, only if it's green, deploys the site. Your app appears at
+`https://<you>.github.io/<repo>/`. (The included `.nojekyll` file tells Pages to serve the
+folder as-is.)
+
+> Previously this project used **Source: Deploy from a branch**. The Actions workflow replaces
+> that — switch the source to **GitHub Actions** so deploys are gated on passing tests.
+
+## Tests
+
+```bash
+npm install   # one-time
+npm test      # run the Vitest suite once
+npm run test:watch
+```
+
+Tests cover the serverless multiplayer match loop (`js/multiplayer.js`). CI runs them on every
+pull request (`.github/workflows/ci.yml`).
 
 ---
 
