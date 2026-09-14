@@ -273,7 +273,11 @@ function firstUncleared(planets) {
   return p ? p.id : planets[planets.length - 1].id;
 }
 
-function starStr(n) { return '★★★☆☆☆'.slice(3 - n, 6 - n) || '☆☆☆'; }
+function starStr(n) {
+  const max = E.CONFIG.maxStars;
+  const filled = Math.max(0, Math.min(max, n || 0));
+  return '★'.repeat(filled) + '☆'.repeat(max - filled);
+}
 
 // ===========================================================================
 // Planet detail
@@ -286,12 +290,32 @@ function openPlanet(planetId) {
   state.currentPlanet = planetId;
   $('#planet-title').textContent = p.name;
   $('#planet-big').textContent = p.emoji;
-  $('#planet-stars').textContent = rec.cleared ? starStr(rec.stars) : '☆☆☆';
+  $('#planet-stars').textContent = rec.cleared ? starStr(rec.stars) : starStr(0);
   $('#planet-hint').textContent = p.hint;
   const prog = E.planetProgress(state.save, planetId);
   $('#planet-bar').style.width = `${prog.pct}%`;
   $('#planet-progress-label').textContent = `${prog.learned} / ${prog.total} facts mastered`;
+  renderFluencyButton(rec, galaxy);
   showScreen('planet');
+}
+
+// The Fluency Run (stars 4-5) opens only once the planet is cleared — the
+// unlock path stays on the regular test, so nobody is gated behind it.
+function renderFluencyButton(rec, galaxy) {
+  const btn = $('#btn-fluency');
+  btn.hidden = !rec.cleared;
+  if (!rec.cleared) return;
+
+  const F = E.CONFIG.fluency;
+  const mins = Math.round(E.fluencyDurationMs(galaxy ? galaxy.op : 'mul') / 60000) || 1;
+  const best = rec.bestRate || 0;
+  const need = rec.stars >= 4 ? F.rate5 : F.rate4;
+
+  $('#fluency-sub').textContent = rec.stars >= E.CONFIG.maxStars
+    ? `${mins} min · your best ${best}/min`
+    : best
+      ? `best ${best}/min · ${need}/min for ★${rec.stars >= 4 ? 5 : 4}`
+      : `${mins} min · ${F.rate4}/min earns ★4`;
 }
 
 // ===========================================================================
@@ -300,6 +324,7 @@ function openPlanet(planetId) {
 function bindPlay() {
   $('#btn-practice').addEventListener('click', () => startPlay('practice'));
   $('#btn-test').addEventListener('click', () => startPlay('test'));
+  $('#btn-fluency').addEventListener('click', () => startPlay('fluency'));
   $('#btn-quit-play').addEventListener('click', () => endPlay());
   $('#btn-skip').addEventListener('click', () => commit(null)); // skip = reveal + wrong
   $('#btn-hint').addEventListener('click', showHint);
@@ -320,18 +345,26 @@ async function startPlay(mode) {
   const planetId = state.currentPlanet;
   state.play = {
     mode, planetId,
-    expected: null, question: null, startedAt: 0, locked: true,
+    expected: null, question: null, startedAt: 0, locked: true, lockReason: null,
+    promptCut: false, qToken: 0, advanceTimer: null,
     answerStr: '', micMisfires: 0, streak: 0,
     practice: { count: 0, correct: 0 },
     test: mode === 'test' ? { queue: E.buildTest(state.save, planetId), idx: 0, results: [] } : null,
+    fluency: mode === 'fluency'
+      ? { run: E.createFluencyRun(state.save, planetId), endsAt: 0, done: false }
+      : null,
   };
 
-  $('#play-mode-pill').textContent = mode === 'test' ? '🏅 Test' : '🎈 Practice';
+  $('#play-mode-pill').textContent =
+    mode === 'test' ? '🏅 Test' : mode === 'fluency' ? '⚡ Fluency' : '🎈 Practice';
   $('#streak-pill').textContent = '🔥 0';
-  $('#btn-hint').hidden = mode === 'test';            // no hints during a test
+  $('#btn-hint').hidden = mode !== 'practice';        // no hints once you're being timed
   $('#btn-finish-practice').hidden = mode !== 'practice';
   $('#test-dots').hidden = mode !== 'test';
+  $('#clock-pill').hidden = mode !== 'fluency';
+  $('#clock-pill').classList.remove('urgent');
   if (mode === 'test') buildDots(state.play.test.queue.length);
+  if (mode === 'fluency') $('#clock-pill').textContent = `⏱ ${fmtClock(state.play.fluency.run.durationMs)}`;
   updateXpBar();
 
   showScreen('play');
@@ -380,6 +413,9 @@ async function nextQuestion() {
     if (play.test.idx >= play.test.queue.length) return finishTest();
     play.question = play.test.queue[play.test.idx];
     markDot(play.test.idx, 'cur');
+  } else if (play.mode === 'fluency') {
+    if (play.fluency.done) return;
+    play.question = play.fluency.run.next();
   } else {
     play.question = E.pickPracticeFact(state.save, play.planetId, play.question?.key);
   }
@@ -387,7 +423,10 @@ async function nextQuestion() {
   play.expected = play.question.answer;
   play.answerStr = '';
   play.micMisfires = 0;
-  play.locked = true; // stays locked until prompt finished
+  play.locked = true;             // stays locked until the prompt finishes
+  play.lockReason = 'prompt';     // ...but a tap can cut the prompt short
+  play.promptCut = false;
+  const token = ++play.qToken;
 
   $('#q-a').textContent = play.question.a;
   $('#q-op').textContent = play.question.symbol;
@@ -400,14 +439,38 @@ async function nextQuestion() {
     ? 'Listening… say your answer! 🎤'
     : 'Tap your answer below 👇';
 
-  // Optional spoken prompt (mutes mic while talking).
-  if (state.save.settings.voicePrompts && hasVoices()) {
+  // Optional spoken prompt (mutes mic while talking). A fluency run skips it:
+  // reading the question aloud costs 1.5-2s of a 2s-per-fact budget.
+  if (play.mode !== 'fluency' && state.save.settings.voicePrompts && hasVoices()) {
     await speak(`What is ${play.question.a} ${play.question.word} ${play.question.b}?`, { mic: state.mic });
   }
 
+  // While we were talking the child may have tapped in (which unlocks and
+  // starts the clock itself), or moved on to another question entirely. Either
+  // way this continuation is stale — don't re-lock or restart their timer.
+  if (state.play !== play || play.qToken !== token || play.promptCut) return;
+
   play.startedAt = performance.now(); // silent timer — never shown as a clock
   play.locked = false;
+  play.lockReason = null;
   if (micEnabled() && !state.mic.listening) state.mic.start();
+  // The countdown starts with the first question, not when the screen opens.
+  if (play.mode === 'fluency' && !play.fluency.endsAt) startFluencyClock();
+}
+
+// A child tapping while the question is still being read aloud already knows
+// the answer. Stop talking, start their timer, and take the keystroke — rather
+// than swallowing the first digit they press. Taps during answer FEEDBACK are
+// still ignored, so a fast double-tap can't skip the next question.
+function cutPrompt(play) {
+  if (play.lockReason !== 'prompt') return false;
+  play.promptCut = true;
+  play.locked = false;
+  play.lockReason = null;
+  play.startedAt = performance.now();
+  try { speechSynthesis.cancel(); } catch (_) {}
+  if (state.mic) state.mic.unmute();
+  return true;
 }
 
 function setSlot(txt) { $('#answer-slot').textContent = txt; }
@@ -420,10 +483,23 @@ function setFeedback(txt, cls = '') {
 // ---- input: keypad ----
 function onKey(k) {
   const play = state.play;
-  if (!play || play.locked) return;
+  if (!play) return;
+  if (play.locked && !cutPrompt(play)) return;
   if (k === 'enter') { if (play.answerStr !== '') commit(parseInt(play.answerStr, 10)); return; }
   if (k === 'back') { play.answerStr = play.answerStr.slice(0, -1); }
-  else if (/^[0-9]$/.test(k)) { if (play.answerStr.length < 3) play.answerStr += k; }
+  else if (/^[0-9]$/.test(k)) {
+    if (play.answerStr.length < 3) play.answerStr += k;
+    // In a fluency run, submit the moment the answer is as long as the answer
+    // needs to be — an extra Enter tap per question is ~15% of a 2s budget.
+    // (Enter still works, for a wrong guess that's shorter than the real answer.)
+    if (play.mode === 'fluency' && E.CONFIG.fluency.autoSubmit
+        && play.answerStr.length === String(play.expected).length) {
+      setSlot(play.answerStr);
+      $('#answer-slot').classList.add('filled');
+      commit(parseInt(play.answerStr, 10));
+      return;
+    }
+  }
   const slot = play.answerStr === '' ? '?' : play.answerStr;
   setSlot(slot);
   $('#answer-slot').classList.toggle('filled', play.answerStr !== '');
@@ -496,6 +572,7 @@ function commit(value, viaMic = false) {
   const play = state.play;
   if (!play || play.locked) return;
   play.locked = true;
+  play.lockReason = 'feedback';
   if (viaMic) state.lastMicCommitAt = performance.now(); // start the suppression window
 
   const elapsed = performance.now() - play.startedAt;
@@ -507,6 +584,11 @@ function commit(value, viaMic = false) {
   if (play.mode === 'practice') {
     play.practice.count++;
     if (isCorrect) play.practice.correct++;
+  } else if (play.mode === 'fluency') {
+    play.fluency.run.results.push({
+      key: play.question.key, correct: isCorrect, elapsedMs: elapsed,
+      fromCurrent: !!play.question.fromCurrent,
+    });
   } else {
     play.test.results.push({ key: play.question.key, correct: isCorrect, elapsedMs: elapsed });
     markDot(play.test.idx, isCorrect ? 'right' : 'wrong');
@@ -518,33 +600,56 @@ function commit(value, viaMic = false) {
   $('#answer-slot').classList.add('filled');
   updateXpBar();
 
+  // A fluency run is deliberately lean: short pauses, no spoken correction, no
+  // confetti. The rate is measured against a wall clock, so every celebration
+  // is time the child doesn't get back.
+  const lean = play.mode === 'fluency';
+  const F = E.CONFIG.fluency;
+
   if (isCorrect) {
     play.streak++; // running count of correct answers in a row THIS session
     if (play.streak > state.save.streakBest) { state.save.streakBest = play.streak; E.persist(state.save); }
     $('#streak-pill').textContent = `🔥 ${play.streak}`;
     const msg = result.fast ? pick(['Lightning fast! ⚡', 'Zoom! 🚀', 'Wow! ⭐', 'Boom! 💥'])
                             : pick(['Nice! 🎉', 'You got it! ✅', 'Great! 🌟', 'Correct! 👏']);
-    setFeedback(msg + (viaMic ? '' : ''), 'good');
+    setFeedback(lean ? '✅' : msg, 'good');
     cheer(result.fast ? '🌟' : '⭐', result.mastered);
     beep(true, result.fast);
-    if (result.fast) confettiBurst(result.mastered ? 60 : 24);
-    if (state.save.settings.voicePrompts && hasVoices() && result.mastered) speak('Mastered!', { mic: state.mic });
-    setTimeout(advance, 750);
+    if (result.fast && !lean) confettiBurst(result.mastered ? 60 : 24);
+    if (!lean && state.save.settings.voicePrompts && hasVoices() && result.mastered) speak('Mastered!', { mic: state.mic });
+    scheduleAdvance(play, lean ? F.goodMs : 750);
   } else {
     play.streak = 0;
     $('#streak-pill').textContent = '🔥 0';
-    setFeedback(`It's ${play.expected}. You'll get it next time! 💪`, 'soft shake');
+    setFeedback(lean ? `${play.expected}` : `It's ${play.expected}. You'll get it next time! 💪`, 'soft shake');
     beep(false);
-    if (state.save.settings.voicePrompts && hasVoices()) {
+    if (!lean && state.save.settings.voicePrompts && hasVoices()) {
       speak(`${play.question.a} ${play.question.word} ${play.question.b} is ${play.expected}`, { mic: state.mic });
     }
-    setTimeout(advance, 1700);
+    scheduleAdvance(play, lean ? F.badMs : 1700);
   }
 }
 
+// Move on after the feedback pause — but only if this is still the SAME session.
+// Quitting mid-pause used to leave the timer running: it would fire into the
+// next session and silently swap out its first question, wiping whatever the
+// child had already typed.
+function scheduleAdvance(play, ms) {
+  clearTimeout(play.advanceTimer);
+  play.advanceTimer = setTimeout(() => {
+    if (state.play === play) advance();
+  }, ms);
+}
+
 function advance() {
-  if (!state.play) return;
-  if (state.play.mode === 'test' && state.play.test.idx >= state.play.test.queue.length) {
+  const play = state.play;
+  if (!play) return;
+  if (play.mode === 'fluency') {
+    if (play.fluency.done) return;
+    if (Date.now() >= play.fluency.endsAt) return finishFluency();
+    return nextQuestion();
+  }
+  if (play.mode === 'test' && play.test.idx >= play.test.queue.length) {
     finishTest();
   } else {
     nextQuestion();
@@ -565,6 +670,8 @@ function markDot(i, cls) {
 }
 
 function endPlay() {
+  if (state.play) clearTimeout(state.play.advanceTimer);
+  stopFluencyClock();
   if (state.mic) state.mic.stop();
   releaseWakeLock();
   try { speechSynthesis.cancel(); } catch (_) {}
@@ -575,6 +682,7 @@ function endPlay() {
 // ---- finishing ----
 function finishTest() {
   const play = state.play;
+  clearTimeout(play.advanceTimer);
   if (state.mic) state.mic.stop();
   releaseWakeLock();
   const grade = E.gradeTest(state.save, play.planetId, play.test.results);
@@ -583,8 +691,90 @@ function finishTest() {
   state.play = null;
 }
 
+// ---- fluency run: the countdown ----
+let fluencyTimer = null;
+
+function startFluencyClock() {
+  const play = state.play;
+  play.fluency.endsAt = Date.now() + play.fluency.run.durationMs;
+  stopFluencyClock();
+  fluencyTimer = setInterval(() => {
+    const p = state.play;
+    if (!p || p.mode !== 'fluency') return stopFluencyClock();
+    const left = Math.max(0, p.fluency.endsAt - Date.now());
+    $('#clock-pill').textContent = `⏱ ${fmtClock(left)}`;
+    $('#clock-pill').classList.toggle('urgent', left <= 15000);
+    if (left <= 0) finishFluency();
+  }, 200);
+}
+
+function stopFluencyClock() {
+  if (fluencyTimer) { clearInterval(fluencyTimer); fluencyTimer = null; }
+}
+
+function fmtClock(ms) {
+  const t = Math.ceil(ms / 1000);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
+// Time's up — pencils down. A question in flight when the clock runs out simply
+// doesn't count, exactly like a paper fact sheet.
+function finishFluency() {
+  const play = state.play;
+  if (!play || !play.fluency || play.fluency.done) return;
+  play.fluency.done = true;
+  clearTimeout(play.advanceTimer);
+  stopFluencyClock();
+  if (state.mic) state.mic.stop();
+  releaseWakeLock();
+  try { speechSynthesis.cancel(); } catch (_) {}
+  $('#clock-pill').textContent = '⏱ 0:00';
+
+  const grade = E.gradeFluency(state.save, play.planetId, play.fluency.run);
+  E.persist(state.save);
+  showFluencyResult(grade, play.planetId);
+  state.play = null;
+}
+
+function showFluencyResult(grade, planetId) {
+  const F = E.CONFIG.fluency;
+  $('#result-burst').textContent = grade.newStar ? '🏆' : grade.accurate ? '⚡' : '🎯';
+  $('#result-title').textContent = grade.newStar
+    ? `${grade.stars} stars! 🌟`
+    : grade.accurate ? 'Strong run!' : 'Careful counts too!';
+  $('#result-stars').textContent = starStr(grade.stars);
+
+  const tail = !grade.accurate
+    ? `<small>A new star needs <b>${Math.round(F.accuracyFloor * 100)}%</b> right — a little slower is a lot surer! 🎯</small>`
+    : grade.nextRate
+      ? `<small><b>${grade.nextRate}</b> per minute earns your next star ⭐</small>`
+      : '<small>Top speed — the only record left to beat is your own! 🚀</small>';
+
+  $('#result-stats').innerHTML =
+    `<b>${grade.rate}</b> facts per minute<br>` +
+    `Accuracy: <b>${Math.round(grade.acc * 100)}%</b> (${grade.correct}/${grade.total})<br>` +
+    tail;
+
+  const reward = $('#result-reward');
+  if (grade.newStar) {
+    reward.classList.remove('hidden');
+    reward.innerHTML = `<span class="big-buddy">⚡</span>You earned star <b>${grade.stars}</b> for pure speed!`;
+    confettiBurst(140);
+    beep(true, true);
+    if (state.save.settings.voicePrompts && hasVoices()) speak('Fluency star! Amazing speed!', {});
+  } else {
+    reward.classList.add('hidden');
+  }
+
+  $('#btn-result-again').textContent = 'Run Again ⚡';
+  $('#btn-result-again').onclick = () => { openPlanet(planetId); startPlay('fluency'); };
+  $('#btn-result-map').onclick = () => navTo('map');
+  showScreen('result');
+}
+
 function finishPractice() {
   const play = state.play;
+  clearTimeout(play.advanceTimer);
   if (state.mic) state.mic.stop();
   releaseWakeLock();
   const { count, correct } = play.practice;
@@ -609,7 +799,9 @@ function showResult(grade, planetId) {
   $('#result-title').textContent = cleared
     ? (grade.newlyCleared ? 'Planet Cleared! 🚀' : 'Cleared again! 🌟')
     : 'So close — try again!';
-  $('#result-stars').textContent = '★★★☆☆☆'.slice(3 - grade.stars, 6 - grade.stars) || '☆☆☆';
+  // Show the planet's running total, so a re-test never appears to *remove* a
+  // fluency star the child already earned.
+  $('#result-stars').textContent = starStr(state.save.planets[planetId].stars);
 
   const avgSec = grade.avgMs ? (grade.avgMs / 1000).toFixed(1) : '—';
   $('#result-stats').innerHTML =

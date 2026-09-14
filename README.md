@@ -73,7 +73,10 @@ npm test      # run the Vitest suite once
 npm run test:watch
 ```
 
-Tests cover the serverless multiplayer match loop (`js/multiplayer.js`). CI runs them on every
+Tests cover the fact engine across all three operations, the weighted practice draw, the
+fluency run and its star thresholds, and the serverless multiplayer match loop
+(`js/multiplayer.js`). `npm run test:e2e` drives the whole solo flow in a real browser,
+including clearing a planet and running it for fluency. CI runs them on every
 pull request (`.github/workflows/ci.yml`).
 
 ---
@@ -102,25 +105,70 @@ first, then *derived/strategy* facts, then the genuinely hard handful, then a mi
 **Commutativity halves the work.** `3×7` and `7×3` are stored as one fact, so learning one
 credits the other — the 13×13 grid collapses to ~91 unique facts the child must actually own.
 
-### Two modes
+### Three modes
 - **🎈 Practice** — untimed, endless, hints available, gentle. The warm-up. Boaler/Beilock's
   research is clear that time pressure *blocks working memory*, so practice has **no clock**.
 - **🏅 Test** — a short fixed set that gates the next planet. Clear it to unlock the next world.
+- **⚡ Fluency Run** — an opt-in timed run for the 4th and 5th stars. Unlocked only *after* a
+  planet is cleared, so nobody is ever gated behind it (see below).
 
 ### Mastery & progression (the "before moving to the next level" gate)
 - A planet's **test is cleared** at **≥ 90% accuracy** *and* a gentle average-speed bar.
   90%+ criteria retain far better than 80% (Pitts et al.).
 - Speed is measured **silently** and only ever celebrated as *"beat your own best"* — never
   shown as a ticking timer a child races against.
-- **Stars (☆☆☆):** 1 for accuracy, +1 for speed, +1 for near-perfect-and-fast.
+- **Stars 1–3 (☆☆☆☆☆):** 1 for accuracy, +1 for speed, +1 for near-perfect-and-fast.
+  These come from the test, and **only these gate the next planet.**
+
+### Stars 4 & 5 — the Fluency Run
+Clearing a planet proves *procedural reliability*. The last two stars are about
+**automaticity**: sustained retrieval, not a lucky dozen questions.
+
+- A fixed timed window — **3 min** for multiplication, **2 min** for + and −, the shorter
+  window keeping fatigue from masquerading as slowness in younger children.
+- Scored as **correct facts per minute against a wall clock**, the same thing a teacher's
+  timed fact sheet measures: **21/min → ★4**, **30/min → ★5**. Those map to the ~3s
+  retrieval boundary and the ~2s automaticity criterion respectively.
+- **Speed alone earns nothing.** A run must clear **90% accuracy** *and* 90% on the current
+  planet's own facts — so a child can't coast on easy review facts while missing the new ones.
+- Questions mix the current planet with everything taught earlier in the galaxy
+  (**60/40**, flipping to 40/60 on planets with fewer than 8 facts, which would otherwise
+  loop the same three questions). Current-planet facts come from a bag — every one appears
+  before any repeats — while review facts are drawn by the same struggle-weighting practice
+  uses.
+- The run is deliberately **lean**: no spoken prompt, a clipped pause, and answers submit as
+  soon as they're long enough. At 2 seconds per fact, every celebration is time the child
+  doesn't get back.
+- A star once earned is **never taken away** by a weaker later run.
+
+All six numbers (both rates, the accuracy floor, both windows, the mix) live in
+`CONFIG.fluency` in `js/engine.js`.
+
+### Where this lands against Florida's B.E.S.T. standards
+- **MA.3.NSO.2.4** (grade 3) asks for ×/÷ 0–12 with *procedural reliability* — that's the
+  3-star test, which is why clearing and unlocking stop there.
+- **MA.4.NSO.2.1** (grade 4) asks for the same facts with *automaticity* — that's the
+  Fluency Run, deliberately a stretch goal rather than a gate.
+- **MA.1.NSO.2.1 / MA.2.NSO.2.1** put addition and subtraction automaticity in grades 1–2,
+  which is why those galaxies get the same per-minute bar in a shorter window.
+- Florida states no facts-per-minute figure anywhere; 21 and 30 come from the fluency
+  research, not from the standard.
 
 ### Adaptive practice (spaced repetition)
 Per-fact **Leitner boxes (1–5)** drive what shows up next:
 - Correct **and fast** (< 3s — the research "automaticity" threshold) → **promote a box.**
 - Correct but **slow** → stays (knows it, not yet automatic).
 - **Wrong** → back to **box 1** (re-presents soon).
-- Selection is a weighted random favoring low boxes, stale facts, and slow facts —
-  so it **interleaves**, spends reps on weak facts, and barely revisits mastered ones.
+- Selection is a weighted random favoring low boxes, stale facts, **recently missed** facts,
+  and **slow** ones — so it **interleaves**, spends reps on weak facts, and barely revisits
+  mastered ones.
+- Slowness is a **slope, not a cliff**: an 8-second fact outranks a 3.1-second one.
+- A miss is **remembered and forgiven gradually** — dropping to box 1 evaporates the moment a
+  fact is answered right once, so a separate decaying miss score keeps giving it extra reps
+  while it re-settles. A fast correct answer forgives twice as much as a slow one.
+- Two rules stop this becoming a grind on the same three facts: no fact may exceed **25% of
+  the draws**, and any fact unseen for too long is **forced back in** — so everything keeps
+  getting rehearsed, not just the hard stuff.
 - **Mastered** = box 5. The stats grid colors every fact by its box.
 
 ### Anti-anxiety, by design
@@ -185,6 +233,10 @@ test length, XP. The planet sequence and hints live in `js/levels.js`.
 - Boaler, *Fluency Without Fear* (Stanford YouCubed) — timed-test anxiety; Beilock on
   working memory under pressure.
 - Van de Walle — the ~3-second retrieval/automaticity threshold.
+- Florida's B.E.S.T. Standards for Mathematics — MA.1/2.NSO.2.1, MA.3.NSO.2.4, MA.4.NSO.2.1
+  and the exploration → procedural reliability → procedural fluency ladder.
+- Curriculum-based measurement (Deno & Mirkin; Burns, VanDerHeyden & Jiban) — correct-per-
+  minute fact norms, and 1–2 minute probes for the youngest grades.
 - Pitts et al. (2021) — 90%/100% mastery criteria retain better than 80%.
 - Baroody / NCTM — fluency = accuracy + efficiency + flexibility, not just speed.
 - Shelley Gray, The Rigorous Owl, Teacher Thrive — anchor→derived teaching sequence.
