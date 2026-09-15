@@ -175,9 +175,18 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 .planet-actions { display: flex; flex-direction: column; gap: 12px; max-width: 420px; margin: 22px auto 0; }
 
 /* ---------- play ---------- */
-.play-bar { gap: 8px; }
-.play-meta { display: flex; gap: 8px; flex: 1; justify-content: center; }
-.pill { background: var(--card); border: 1px solid var(--card-edge); border-radius: 999px; padding: 6px 12px; font-size: .9rem; font-weight: 600; }
+.play-bar { gap: 8px; flex-wrap: wrap; }
+/* The countdown is a third pill up here, which overflowed the header on a
+   narrow phone — let the pills wrap and shrink instead of pushing the page
+   sideways. */
+.play-meta { display: flex; gap: 8px; flex: 1; justify-content: center; flex-wrap: wrap; row-gap: 6px; min-width: 0; }
+.pill { background: var(--card); border: 1px solid var(--card-edge); border-radius: 999px; padding: 6px 12px; font-size: .9rem; font-weight: 600; white-space: nowrap; }
+@media (max-width: 400px) {
+  .pill { padding: 5px 9px; font-size: .8rem; }
+  .play-bar { gap: 6px; }
+  .xp-mini { min-width: 0; }
+  .xp-mini .bar-track { width: 40px; }
+}
 .pill.streak { background: rgba(255,127,80,.18); }
 .pill.clock { background: rgba(138,180,255,.18); font-variant-numeric: tabular-nums; }
 .pill.clock.urgent { background: rgba(255,99,99,.28); animation: clock-tick 1s steps(2, end) infinite; }
@@ -272,6 +281,22 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 .result-stars { font-size: 2.6rem; color: var(--accent); letter-spacing: 3px; margin: 6px 0; }
 .result-stats { color: var(--ink-dim); line-height: 1.7; margin: 10px 0; }
 .result-stats b { color: var(--ink); }
+.result-review {
+  text-align: left; margin: 14px auto; max-width: 420px; padding: 12px 14px;
+  background: var(--card); border: 1px solid var(--card-edge); border-radius: 16px;
+}
+.result-review h3 { margin: 0 0 8px; font-size: 1rem; color: var(--ink); }
+.result-review ul { list-style: none; margin: 0; padding: 0; }
+.result-review li {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 5px 0; border-bottom: 1px solid var(--card-edge); font-size: 1rem;
+}
+.result-review li:last-child { border-bottom: none; }
+.rv-fact { color: var(--ink); font-variant-numeric: tabular-nums; }
+.rv-said { color: var(--ink-dim); font-size: .82rem; white-space: nowrap; }
+.rv-times { color: var(--accent); font-weight: 600; }
+.rv-more { margin: 8px 0 0; font-size: .85rem; color: var(--ink-dim); text-align: center; }
+
 .result-reward { font-size: 1.1rem; margin: 14px 0; padding: 14px; border-radius: 16px; background: rgba(108,229,200,.14); border: 1px solid var(--card-edge); }
 .result-reward .big-buddy { font-size: 3rem; display: block; }
 .result-actions { display: flex; gap: 12px; margin-top: 20px; }

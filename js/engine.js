@@ -48,10 +48,11 @@ export const CONFIG = {
     currentShare: 0.6,    // share of questions drawn from THIS planet's facts
     smallPlanet: 8,       // planets with fewer facts than this...
     smallShare: 0.4,      // ...lean on review instead, so it isn't a 3-fact loop
-    // Lean run: no spoken prompt and a clipped pause, or 30/min is unreachable.
+    // Lean run: no spoken prompt and a clipped pause. The child still submits
+  // every answer themselves, so a short wrong answer (5 for 7x8) is taken as
+  // given and marked wrong, exactly as it would be on paper.
     goodMs: 250,          // pause after a correct answer
     badMs: 900,           // pause after a miss (long enough to read the answer)
-    autoSubmit: true,     // submit as soon as the answer's digit count is typed
   },
 };
 
@@ -319,7 +320,8 @@ export function gradeTest(save, planetId, results) {
   save.history.push({ at: Date.now(), planetId, mode: 'test', total, correct, acc, avgMs, cleared });
   if (save.history.length > 100) save.history.shift();
 
-  return { acc, avgMs, stars, cleared, newlyCleared, unlockedNext, buddy, correct, total };
+  return { acc, avgMs, stars, cleared, newlyCleared, unlockedNext, buddy, correct, total,
+           missed: missedFacts(results) };
 }
 
 // ---------------------------------------------------------------------------
@@ -400,8 +402,31 @@ export function createFluencyRun(save, planetId) {
   };
 }
 
+// What went wrong, for the end-of-run review: one row per fact (not per miss),
+// carrying the question as the child saw it, the answer they gave, and the
+// right one. `times` counts repeat misses of the same fact in the same run.
+export function missedFacts(results) {
+  const out = new Map();
+  for (const r of results) {
+    if (r.correct) continue;
+    const seen = out.get(r.key);
+    if (seen) { seen.times++; continue; }
+    const { op, a, b, answer } = parseFactKey(r.key);
+    out.set(r.key, {
+      key: r.key,
+      a: r.a ?? a,
+      b: r.b ?? b,
+      symbol: r.symbol || OPERATIONS[op].symbol,
+      answer,
+      given: r.given == null ? null : r.given,   // null = skipped / ran out of time
+      times: 1,
+    });
+  }
+  return [...out.values()];
+}
+
 // Score a completed run. `run.results` entries are
-// { key, correct, elapsedMs, fromCurrent }.
+// { key, correct, elapsedMs, fromCurrent, a, b, symbol, given }.
 export function gradeFluency(save, planetId, run) {
   const F = CONFIG.fluency;
   const results = run.results;
@@ -432,6 +457,7 @@ export function gradeFluency(save, planetId, run) {
 
   return {
     rate, acc, curAcc, correct, total, accurate,
+    missed: missedFacts(results),
     earned, stars: rec.stars, newStar: rec.stars > before,
     // What the next star would take (null once both are earned).
     nextRate: rec.stars >= 5 ? null : rec.stars >= 4 ? F.rate5 : F.rate4,

@@ -160,10 +160,30 @@ try {
   assert(await page.isVisible('#clock-pill'), 'fluency countdown missing');
   assert(await page.isHidden('#btn-hint'), 'hints offered during a timed run');
 
-  // No Enter presses: the run auto-submits once the answer is long enough.
+  // Nothing is submitted until the child submits it, and whatever they submit is
+  // taken as their answer — including a wrong one SHORTER than the real answer,
+  // which a digit-counting auto-submit would have made impossible to enter.
+  const firstQ = await page.evaluate(() => ({
+    a: +document.querySelector('#q-a').textContent,
+    op: document.querySelector('#q-op').textContent,
+    b: +document.querySelector('#q-b').textContent,
+  }));
+  const wrong = (firstQ.a * firstQ.b) === 1 ? '2' : '1';
+  await page.click(`#keypad button[data-k="${wrong}"]`);
+  assert((await page.textContent('#answer-slot')) === wrong, 'the typed digit is not shown');
+  assert((await page.evaluate(() => document.querySelector('#feedback').className)) === 'feedback',
+    'the answer was submitted before the child pressed enter');
+  await page.click('#keypad button[data-k="enter"]');
+  await page.waitForFunction(() => document.querySelector('#feedback').className.includes('shake'),
+    null, { timeout: 5000 }).catch(() => { throw new Error('a short wrong answer was not accepted'); });
+  await ready();
+  console.log('✓ explicit submit: a short wrong answer is accepted and marked wrong');
+
+  // Every answer is submitted explicitly — a wrong answer of any length counts
+  // as given, the same way it would on a written fact sheet.
   for (let i = 0; i < 200; i++) {
     if (await page.isVisible('#screen-result.active')) break;
-    try { await answer(false); await ready(); } catch { break; }
+    try { await answer(true); await ready(); } catch { break; }
   }
   await page.waitForSelector('#screen-result.active', { timeout: 20000 });
 
@@ -175,7 +195,20 @@ try {
   });
   assert(saved.last.mode === 'fluency', `last history entry should be a fluency run, got ${saved.last.mode}`);
   assert(saved.bestRate > 0, 'fluency rate was not recorded');
-  assert(saved.stars >= 4, `a perfect fast run should earn a 4th star, got ${saved.stars}`);
+  assert(saved.stars >= 4, `a fast, accurate run should earn a 4th star, got ${saved.stars}`);
+  assert(saved.last.acc < 1 && saved.last.acc >= 0.9,
+    `the deliberate miss should show up in accuracy, got ${saved.last.acc}`);
+  // The end-of-run review must name the fact we deliberately missed.
+  assert(await page.isVisible('#result-review'), 'no end-of-run review of missed facts');
+  const review = (await page.textContent('#result-review')).replace(/\s+/g, ' ');
+  const wantFact = `${firstQ.a} ${firstQ.op} ${firstQ.b} = ${firstQ.a * firstQ.b}`;
+  assert(review.includes(wantFact), `review should list "${wantFact}", got "${review}"`);
+  assert(review.includes(`you said ${wrong}`), `review should show the given answer, got "${review}"`);
+  console.log(`✓ review lists the miss: ${wantFact} (you said ${wrong})`);
+
+  const stats = await page.textContent('#result-stats');
+  assert(/facts per minute at \d+% accuracy/.test(stats.replace(/\s+/g, ' ')),
+    `result should report speed and accuracy together, got "${stats.replace(/\s+/g, ' ')}"`);
   assert(flStars === '★'.repeat(saved.stars) + '☆'.repeat(5 - saved.stars),
     `result stars "${flStars}" disagree with the saved ${saved.stars}`);
   console.log(`✓ fluency run: ${saved.bestRate}/min → ${flStars}`);
@@ -194,6 +227,30 @@ try {
   const head = await page.evaluate(() => document.querySelector('#heatmap .hc.head')?.textContent);
   assert(head === '−', `subtraction grid header should be "−", got "${head}"`);
   console.log('✓ stats heatmap switches per galaxy');
+
+  // --- narrow phone: the timed run adds a third pill to the play header ---
+  await page.setViewportSize({ width: 360, height: 720 });
+  await page.click('#screen-stats.active [data-nav="home"]');
+  await page.waitForSelector('#screen-home.active');
+  await page.$eval('#btn-continue', (el) => el.click());
+  await page.waitForSelector('#screen-galaxy.active');
+  await page.$$eval('#galaxy-cards .galaxy-card', (els) => {
+    els.find((e) => e.querySelector('.gx-name')?.textContent.includes('Multiplication')).click();
+  });
+  await page.waitForSelector('#screen-map.active');
+  await page.click('#planet-track .planet-node:not(.locked)');
+  await page.waitForSelector('#screen-planet.active');
+  await page.click('#btn-fluency');
+  await page.waitForSelector('#screen-play.active');
+  const fit = await page.evaluate(() => ({
+    doc: document.documentElement.scrollWidth,
+    view: document.documentElement.clientWidth,
+  }));
+  assert(fit.doc <= fit.view,
+    `the timed run overflows a 360px screen sideways (${fit.doc} > ${fit.view})`);
+  console.log(`✓ play header fits a 360px phone (${fit.doc}px)`);
+  await page.click('#btn-quit-play');
+  await page.waitForSelector('#screen-map.active');
 
   assert(fatal.length === 0, 'uncaught page errors:\n' + fatal.join('\n'));
   console.log('\nE2E PASSED');

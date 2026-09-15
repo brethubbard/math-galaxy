@@ -128,6 +128,60 @@ describe('fluency stars sit on top of clearing the planet', () => {
   });
 });
 
+describe('end-of-run review: what went wrong', () => {
+  const miss = (key, given, a, b, symbol) => ({ key, correct: false, elapsedMs: 4000, fromCurrent: true, a, b, symbol, given });
+  const hit = (key) => ({ key, correct: true, elapsedMs: 1200, fromCurrent: true });
+
+  it('lists each missed fact with the answer given and the right one', () => {
+    const save = cleared();
+    const res = [hit('2x3'), miss('7x8', 54, 7, 8, '×'), hit('4x4'), miss('6x9', 56, 6, 9, '×')];
+    const { missed } = E.gradeFluency(save, 'L10', runFor(save, 'L10', res));
+
+    expect(missed).toHaveLength(2);
+    expect(missed[0]).toMatchObject({ key: '7x8', a: 7, b: 8, symbol: '×', answer: 56, given: 54, times: 1 });
+    expect(missed[1]).toMatchObject({ key: '6x9', answer: 54, given: 56, times: 1 });
+  });
+
+  it('lists a fact once however many times it was missed', () => {
+    const save = cleared();
+    const res = [miss('7x8', 54, 7, 8, '×'), miss('7x8', 49, 7, 8, '×'), miss('7x8', null, 7, 8, '×')];
+    const { missed } = E.gradeFluency(save, 'L10', runFor(save, 'L10', res));
+    expect(missed).toHaveLength(1);
+    expect(missed[0].times).toBe(3);
+    expect(missed[0].given).toBe(54); // the first answer they tried
+  });
+
+  it('marks a skipped question as skipped rather than as a wrong number', () => {
+    const save = cleared();
+    const { missed } = E.gradeFluency(save, 'L10', runFor(save, 'L10', [miss('7x8', null, 7, 8, '×')]));
+    expect(missed[0].given).toBeNull();
+  });
+
+  it('is empty on a clean run', () => {
+    const save = cleared();
+    const { missed } = E.gradeFluency(save, 'L10', runFor(save, 'L10', results(60)));
+    expect(missed).toEqual([]);
+  });
+
+  it('falls back to the canonical fact when a result carries no display info', () => {
+    const save = cleared();
+    const res = [{ key: '6x7', correct: false, elapsedMs: 4000, fromCurrent: true }];
+    const { missed } = E.gradeFluency(save, 'L10', runFor(save, 'L10', res));
+    expect(missed[0]).toMatchObject({ a: 6, b: 7, symbol: '×', answer: 42, given: null });
+  });
+
+  it('reviews the regular planet test too', () => {
+    const save = E.newSave('t');
+    const res = [
+      { key: '2x3', correct: true, elapsedMs: 1000 },
+      { key: '18-9', correct: false, elapsedMs: 5000, a: 18, b: 9, symbol: '−', given: 8 },
+    ];
+    const grade = E.gradeTest(save, 'S8', res);
+    expect(grade.missed).toHaveLength(1);
+    expect(grade.missed[0]).toMatchObject({ a: 18, b: 9, symbol: '−', answer: 9, given: 8 });
+  });
+});
+
 describe('fluency run: question mix', () => {
   it('mixes the current planet with earlier facts from the same galaxy', () => {
     const save = E.newSave('t');

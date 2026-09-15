@@ -487,19 +487,7 @@ function onKey(k) {
   if (play.locked && !cutPrompt(play)) return;
   if (k === 'enter') { if (play.answerStr !== '') commit(parseInt(play.answerStr, 10)); return; }
   if (k === 'back') { play.answerStr = play.answerStr.slice(0, -1); }
-  else if (/^[0-9]$/.test(k)) {
-    if (play.answerStr.length < 3) play.answerStr += k;
-    // In a fluency run, submit the moment the answer is as long as the answer
-    // needs to be — an extra Enter tap per question is ~15% of a 2s budget.
-    // (Enter still works, for a wrong guess that's shorter than the real answer.)
-    if (play.mode === 'fluency' && E.CONFIG.fluency.autoSubmit
-        && play.answerStr.length === String(play.expected).length) {
-      setSlot(play.answerStr);
-      $('#answer-slot').classList.add('filled');
-      commit(parseInt(play.answerStr, 10));
-      return;
-    }
-  }
+  else if (/^[0-9]$/.test(k)) { if (play.answerStr.length < 3) play.answerStr += k; }
   const slot = play.answerStr === '' ? '?' : play.answerStr;
   setSlot(slot);
   $('#answer-slot').classList.toggle('filled', play.answerStr !== '');
@@ -545,7 +533,10 @@ function wireMic(mic) {
     dbg('state', st + (detail ? ' ' + detail : ''));
     if (st === 'loading') {
       $('#mic-btn').classList.remove('listening');
-      $('#heard').innerHTML = '🛰️ Loading the smart voice model… <small>(one-time, may take a bit)</small>';
+      // Don't nag about the voice model if the mic is switched off in settings.
+      if (micEnabled()) {
+        $('#heard').innerHTML = '🛰️ Loading the smart voice model… <small>(one-time, may take a bit)</small>';
+      }
     }
     if (st === 'listening') { $('#mic-btn').classList.remove('off'); $('#mic-btn').classList.add('listening'); }
     if (st === 'idle' || st === 'error') $('#mic-btn').classList.remove('listening');
@@ -554,7 +545,7 @@ function wireMic(mic) {
       $('#mic-btn').classList.add('off');
       $('#heard').textContent = 'Mic is off — just tap your answers! 👇';
     }
-    if (st === 'error' && detail === 'load') {
+    if (st === 'error' && detail === 'load' && micEnabled()) {
       // The on-device voice model couldn't load — the keypad still works.
       $('#heard').innerHTML = '⚠️ Couldn\'t load the voice — tap your answers any time 👇';
     }
@@ -588,9 +579,13 @@ function commit(value, viaMic = false) {
     play.fluency.run.results.push({
       key: play.question.key, correct: isCorrect, elapsedMs: elapsed,
       fromCurrent: !!play.question.fromCurrent,
+      a: play.question.a, b: play.question.b, symbol: play.question.symbol, given: value,
     });
   } else {
-    play.test.results.push({ key: play.question.key, correct: isCorrect, elapsedMs: elapsed });
+    play.test.results.push({
+      key: play.question.key, correct: isCorrect, elapsedMs: elapsed,
+      a: play.question.a, b: play.question.b, symbol: play.question.symbol, given: value,
+    });
     markDot(play.test.idx, isCorrect ? 'right' : 'wrong');
     play.test.idx++;
   }
@@ -736,6 +731,30 @@ function finishFluency() {
   state.play = null;
 }
 
+// End-of-run review: which facts went wrong, what the child answered, and what
+// the answer actually is. Framed as "practice these", not as a tally of errors —
+// a long list is capped so a rough run never turns into a wall of red.
+const REVIEW_LIMIT = 12;
+
+function renderReview(missed) {
+  const el = $('#result-review');
+  if (!missed || !missed.length) { el.hidden = true; el.innerHTML = ''; return; }
+
+  const shown = missed.slice(0, REVIEW_LIMIT);
+  const rest = missed.length - shown.length;
+  el.hidden = false;
+  el.innerHTML =
+    '<h3>📝 Facts to practice</h3><ul>' +
+    shown.map((m) => {
+      const said = m.given == null ? 'skipped' : `you said ${m.given}`;
+      const again = m.times > 1 ? ` <span class="rv-times">×${m.times}</span>` : '';
+      return `<li><span class="rv-fact">${m.a} ${m.symbol} ${m.b} = <b>${m.answer}</b></span>` +
+             `<span class="rv-said">${said}${again}</span></li>`;
+    }).join('') +
+    '</ul>' +
+    (rest > 0 ? `<p class="rv-more">…and ${rest} more to work on 💪</p>` : '');
+}
+
 function showFluencyResult(grade, planetId) {
   const F = E.CONFIG.fluency;
   $('#result-burst').textContent = grade.newStar ? '🏆' : grade.accurate ? '⚡' : '🎯';
@@ -744,21 +763,27 @@ function showFluencyResult(grade, planetId) {
     : grade.accurate ? 'Strong run!' : 'Careful counts too!';
   $('#result-stars').textContent = starStr(grade.stars);
 
+  const accPct = Math.round(grade.acc * 100);
+  const floorPct = Math.round(F.accuracyFloor * 100);
+
+  // Speed and accuracy are one result, not two numbers — a star needs both.
   const tail = !grade.accurate
-    ? `<small>A new star needs <b>${Math.round(F.accuracyFloor * 100)}%</b> right — a little slower is a lot surer! 🎯</small>`
+    ? `<small>Fast! But a star needs <b>${floorPct}%</b> right — a little slower is a lot surer 🎯</small>`
     : grade.nextRate
-      ? `<small><b>${grade.nextRate}</b> per minute earns your next star ⭐</small>`
+      ? `<small><b>${grade.nextRate}</b> per minute at ${floorPct}%+ earns your next star ⭐</small>`
       : '<small>Top speed — the only record left to beat is your own! 🚀</small>';
 
   $('#result-stats').innerHTML =
-    `<b>${grade.rate}</b> facts per minute<br>` +
-    `Accuracy: <b>${Math.round(grade.acc * 100)}%</b> (${grade.correct}/${grade.total})<br>` +
+    `<b>${grade.rate}</b> facts per minute at <b>${accPct}%</b> accuracy<br>` +
+    `<b>${grade.correct}</b> right out of <b>${grade.total}</b> answered<br>` +
     tail;
+
+  renderReview(grade.missed);
 
   const reward = $('#result-reward');
   if (grade.newStar) {
     reward.classList.remove('hidden');
-    reward.innerHTML = `<span class="big-buddy">⚡</span>You earned star <b>${grade.stars}</b> for pure speed!`;
+    reward.innerHTML = `<span class="big-buddy">⚡</span>You earned star <b>${grade.stars}</b> — fast <i>and</i> accurate!`;
     confettiBurst(140);
     beep(true, true);
     if (state.save.settings.voicePrompts && hasVoices()) speak('Fluency star! Amazing speed!', {});
@@ -784,6 +809,7 @@ function finishPractice() {
   $('#result-burst').textContent = '🎈';
   $('#result-title').textContent = 'Good practice!';
   $('#result-stars').textContent = '';
+  renderReview(null);
   $('#result-stats').innerHTML =
     `You tried <b>${count}</b> facts and got <b>${correct}</b> right (<b>${acc}%</b>).<br>Every try makes your brain stronger! 🧠`;
   $('#result-reward').classList.add('hidden');
@@ -808,6 +834,8 @@ function showResult(grade, planetId) {
     `Accuracy: <b>${Math.round(grade.acc * 100)}%</b> (${grade.correct}/${grade.total})<br>` +
     `Your speed: <b>${avgSec}s</b> per fact ${grade.avgMs && grade.avgMs <= E.CONFIG.fastMs ? '⚡' : ''}<br>` +
     (cleared ? '' : `<small>Reach ${Math.round(E.CONFIG.testAccuracy * 100)}% to clear this planet — you're almost there!</small>`);
+
+  renderReview(grade.missed);
 
   const reward = $('#result-reward');
   if (grade.newlyCleared) {

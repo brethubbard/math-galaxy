@@ -131,14 +131,20 @@ Clearing a planet proves *procedural reliability*. The last two stars are about
   retrieval boundary and the ~2s automaticity criterion respectively.
 - **Speed alone earns nothing.** A run must clear **90% accuracy** *and* 90% on the current
   planet's own facts — so a child can't coast on easy review facts while missing the new ones.
+  Speed and accuracy are reported as one result, because either alone is meaningless.
+- Every answer is **submitted by the child**, and whatever they submit is taken as their
+  answer — a wrong answer *shorter* than the right one (5 for 7×8) counts as given and is
+  marked wrong, exactly as it would be on paper.
+- The run ends with a **review of what went wrong**: each missed fact, the answer given, and
+  the right one — framed as "facts to practice", capped so a rough run is never a wall of red.
+  The regular planet test shows the same review.
 - Questions mix the current planet with everything taught earlier in the galaxy
   (**60/40**, flipping to 40/60 on planets with fewer than 8 facts, which would otherwise
   loop the same three questions). Current-planet facts come from a bag — every one appears
   before any repeats — while review facts are drawn by the same struggle-weighting practice
   uses.
-- The run is deliberately **lean**: no spoken prompt, a clipped pause, and answers submit as
-  soon as they're long enough. At 2 seconds per fact, every celebration is time the child
-  doesn't get back.
+- The run is deliberately **lean**: no spoken prompt, a clipped pause, no confetti. At 2
+  seconds per fact, every celebration is time the child doesn't get back.
 - A star once earned is **never taken away** by a weaker later run.
 
 All six numbers (both rates, the accuracy floor, both windows, the mix) live in
