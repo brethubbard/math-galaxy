@@ -67,18 +67,72 @@ async function boot() {
   initPWA();
   initDebug();
 
-  // Eagerly download + warm up the on-device voice behind a loading screen.
-  if (voskSupported) {
-    state.mic = new VoskMic();
-    wireMic(state.mic);
+  // Eagerly download + warm up the on-device voice behind a loading screen —
+  // but ONLY if this pilot wants the mic. Switched off, the ~40 MB model is
+  // never fetched and there's no loading screen to sit through.
+  if (micWanted()) {
+    ensureMic();
     await runBootLoad();
   } else {
-    hideBootLoader();
+    hideBootLoader(true);
   }
+  syncMicUi();
 
   if (state.save) renderHome(true);
   else renderHome(false);
 }
+
+// Does this pilot want to answer by voice? A brand-new pilot has no saved
+// preference yet, and the app is voice-first by default.
+function micWanted() {
+  if (!voskSupported) return false;
+  return !state.save || state.save.settings.useMic !== false;
+}
+
+// Build the recognizer on demand. Cheap — it holds no audio and downloads
+// nothing until loadVoice() runs.
+function ensureMic() {
+  if (!voskSupported) return null;
+  if (!state.mic) { state.mic = new VoskMic(); wireMic(state.mic); }
+  return state.mic;
+}
+
+// Fetch + warm the voice model, at most once per page load. Shared by the boot
+// screen and by switching the mic on in settings, which report progress
+// differently — hence the callbacks rather than a fixed UI.
+let voiceLoad = null;
+
+function loadVoice({ status = () => {}, progress = () => {} } = {}) {
+  if (voiceLoad) return voiceLoad;
+  const mic = ensureMic();
+  if (!mic) return Promise.reject(new Error('voice not supported here'));
+
+  voiceLoad = (async () => {
+    status('Downloading the voice model…');
+    await prefetchModel((frac, received, total) => progress(frac, received, total));
+    status('Warming up the voice…');
+    await buildModel();     // load vosk-browser + instantiate (from cache)
+    await mic.preload();    // bind the ready model to our recognizer
+  })();
+  // A failed download must stay retryable — one flaky attempt shouldn't wedge
+  // the mic until the page is reloaded.
+  voiceLoad.catch(() => { voiceLoad = null; });
+  return voiceLoad;
+}
+
+// Hide the mic affordances outright when the mic is off, so "off" doesn't leave
+// a big tappable microphone sitting on the play screen.
+function syncMicUi() {
+  const on = micEnabled();
+  for (const id of ['#mic-btn', '#versus-mic-btn']) {
+    const el = $(id);
+    if (!el) continue;
+    el.hidden = !on;
+    if (!on) el.classList.remove('listening');
+  }
+}
+
+const mbOf = (n) => (n / (1024 * 1024)).toFixed(0);
 
 // ---- Boot loading screen: download the voice model up front ----
 // Resolves when the model is ready, fails gracefully, or the user taps "skip".
@@ -93,23 +147,19 @@ function runBootLoad() {
     const skipTimer = setTimeout(() => skip && skip.classList.remove('hidden'), 6000);
     if (skip) skip.onclick = () => { clearTimeout(skipTimer); close(); };
 
-    (async () => {
-      try {
-        setBootStatus('Downloading the voice model…');
-        await prefetchModel((frac, received, total) => updateBootProgress(frac, received, total));
-        setBootStatus('Warming up the voice…');
-        setBootBarIndeterminate(true);
-        await buildModel();        // load vosk-browser + instantiate (from cache)
-        await state.mic.preload(); // bind the ready model to our recognizer
-        dbg('boot', 'voice model ready');
-      } catch (e) {
+    loadVoice({
+      status: (txt) => {
+        setBootStatus(txt);
+        if (txt.startsWith('Warming')) setBootBarIndeterminate(true);
+      },
+      progress: (frac, received, total) => updateBootProgress(frac, received, total),
+    })
+      .then(() => dbg('boot', 'voice model ready'))
+      .catch((e) => {
         dbg('boot', 'voice preload failed: ' + e);
         setBootSub('⚠️ Couldn\'t load the voice — you can still tap your answers. 👇');
-      } finally {
-        clearTimeout(skipTimer);
-        close();
-      }
-    })();
+      })
+      .finally(() => { clearTimeout(skipTimer); close(); });
   });
 }
 
@@ -123,14 +173,14 @@ function updateBootProgress(frac, received, total) {
   setBootBarIndeterminate(frac == null);
   const fill = $('#boot-bar');
   if (fill && frac != null) fill.style.width = `${Math.round(frac * 100)}%`;
-  if (total) {
-    const mb = (n) => (n / (1024 * 1024)).toFixed(0);
-    setBootSub(`${mb(received)} of ${mb(total)} MB — one time, then it works offline.`);
-  }
+  if (total) setBootSub(`${mbOf(received)} of ${mbOf(total)} MB — one time, then it works offline.`);
 }
-function hideBootLoader() {
+function hideBootLoader(instant = false) {
   const el = $('#boot-loader');
   if (!el) return;
+  // With the mic off there is no download, so don't even flash "Loading the
+  // voice…" on the way past — drop the screen outright.
+  if (instant) { el.remove(); return; }
   el.classList.add('done');
   setTimeout(() => el.remove(), 450); // let the fade-out finish, then drop it
 }
@@ -367,6 +417,7 @@ async function startPlay(mode) {
   if (mode === 'fluency') $('#clock-pill').textContent = `⏱ ${fmtClock(state.play.fluency.run.durationMs)}`;
   updateXpBar();
 
+  syncMicUi();
   showScreen('play');
   requestWakeLock(); // keep the screen on while playing (kids pause to think)
   const dbgEng = $('#dbg-eng'); if (dbgEng) dbgEng.textContent = `· vosk · mic ${micEnabled() ? 'on' : 'off'}`;
@@ -375,7 +426,7 @@ async function startPlay(mode) {
   nextQuestion();
 }
 
-function micEnabled() { return !!(state.mic && state.save.settings.useMic && voskSupported); }
+function micEnabled() { return !!(state.mic && voskSupported && state.save?.settings.useMic); }
 
 // ---- Screen Wake Lock: stop the device dimming/sleeping mid-problem ----
 async function requestWakeLock() {
@@ -553,7 +604,7 @@ function wireMic(mic) {
 }
 
 function toggleMic() {
-  if (!state.mic || !voskSupported) return;
+  if (!micEnabled()) return; // switched off in settings — the button is hidden too
   if (!state.mic.listening) { state.mic.start(); $('#mic-btn').classList.remove('off'); }
   else { state.mic.stop(); }
 }
@@ -931,6 +982,53 @@ function renderStatsGalaxyTabs() {
   }
 }
 
+function setMicNote(txt) { $('#mic-support-note').textContent = txt; }
+
+function renderMicNote() {
+  if (!voskSupported) {
+    setMicNote('⚠️ This browser can\'t use the mic here (it needs https or localhost). Tap answers instead — everything still works!');
+  } else if (!state.save.settings.useMic) {
+    setMicNote('Off — the microphone is never opened and the ~40 MB voice model is never downloaded. Switch it on to fetch it once; after that it works offline.');
+  } else if (voiceLoad) {
+    setMicNote('Hears spoken numbers on-device — accurate and private, and works offline. Tapping always works too.');
+  } else {
+    setMicNote('On — the ~40 MB voice model downloads the next time you play. Tapping always works too.');
+  }
+}
+
+// Switching the mic off has to MEAN something: let go of the microphone now
+// (so the browser's recording indicator goes out), hide the mic controls, and
+// never fetch the voice model. Switching it on fetches the model there and
+// then, rather than leaving a dead mic button until the next reload.
+async function setMicEnabled(on) {
+  state.save.settings.useMic = on;
+  E.persist(state.save);
+
+  if (!on) {
+    if (state.mic) state.mic.stop();
+    syncMicUi();
+    renderMicNote();
+    dbg('settings', 'mic off — microphone released, no model fetch');
+    return;
+  }
+
+  ensureMic();
+  syncMicUi();
+  if (voiceLoad) { renderMicNote(); return; } // already downloaded this session
+
+  try {
+    await loadVoice({
+      status: (txt) => setMicNote(txt),
+      progress: (frac, received, total) => {
+        if (total) setMicNote(`Downloading the voice… ${mbOf(received)} of ${mbOf(total)} MB — one time, then it works offline.`);
+      },
+    });
+    renderMicNote();
+  } catch (_) {
+    setMicNote('⚠️ Couldn\'t download the voice model — check your connection. Tapping still works.');
+  }
+}
+
 function renderHeatmap(op = 'mul') {
   const g = E.masteryGrid(state.save, op);
   const hm = $('#heatmap');
@@ -960,16 +1058,14 @@ function renderSettings() {
   $('#set-voice').disabled = !voiceOk;
   $('#set-sound').checked = s.sound;
   $('#set-name').value = state.save.name;
-  $('#mic-support-note').textContent = voskSupported
-    ? 'Hears spoken numbers on-device — accurate and private, and works offline. Tapping always works too.'
-    : '⚠️ This browser can\'t use the mic here (it needs https or localhost). Tap answers instead — everything still works!';
+  renderMicNote();
   $('#voice-support-note').textContent = voiceOk
     ? 'Reads each question aloud.'
     : (!ttsSupported
         ? '⚠️ This browser can\'t speak. Sound effects still work.'
         : '⚠️ No speech voices are installed on this computer, so questions can\'t be read aloud. On Linux, install a voice engine (e.g. "sudo apt install speech-dispatcher espeak-ng") and restart your browser. Sound effects still work.');
 
-  $('#set-mic').onchange = (e) => { state.save.settings.useMic = e.target.checked; E.persist(state.save); };
+  $('#set-mic').onchange = (e) => setMicEnabled(e.target.checked);
   $('#set-voice').onchange = (e) => { state.save.settings.voicePrompts = e.target.checked; E.persist(state.save); };
   $('#set-sound').onchange = (e) => { state.save.settings.sound = e.target.checked; E.persist(state.save); };
   $('#set-name').onchange = (e) => { state.save.name = e.target.value.trim() || 'Space Pilot'; E.persist(state.save); };

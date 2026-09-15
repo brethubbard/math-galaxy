@@ -18,6 +18,8 @@ GitHub Pages and play.
 
 Open `index.html` in a modern browser. On first launch it shows a loading screen while it
 downloads the ~40 MB on-device voice model (one time — then it's cached and works offline).
+Turn **🎤 Microphone answers** off in Settings and that download never happens at all: the
+app starts straight away, the mic is never opened, and the game is keypad-only.
 Say or tap your answer. That's it.
 
 Locally, just run the helper script — it serves the app and opens your browser:
@@ -192,6 +194,11 @@ That constraint is what fixes the classic "thirteen vs thirty" confusion — the
 - **Offline:** the ~40 MB model is downloaded **eagerly at app start behind a loading screen**,
   then cached persistently — so every launch after the first is instant and works with no
   connection. (Needs a *secure context* for mic access: `https://` or `http://localhost`.)
+- **Opt-out means opt-out:** the download is gated on the **🎤 Microphone answers** setting.
+  Switched off, the model is never fetched, the boot screen never appears, the microphone is
+  never opened, and the mic button is hidden rather than left sitting there inert. Switching
+  it back on fetches the model there and then, with progress shown in Settings — no reload
+  needed. (The `e2e` suite asserts zero model requests with the mic off.)
 - **Forgiving matching:** it checks every candidate number it heard and a homophone map
   (`for→four`, `ate→eight`, `to→two`…), grading against the *expected* answer — so a near-miss
   rarely costs a correct kid. It only ever **auto-accepts the right answer**; it never auto-marks

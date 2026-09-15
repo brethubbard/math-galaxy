@@ -252,6 +252,41 @@ try {
   await page.click('#btn-quit-play');
   await page.waitForSelector('#screen-map.active');
 
+  // --- "microphone off" must actually mean off ---
+  // A fresh profile with the mic switched off must not fetch the ~40 MB voice
+  // model, and must not sit behind the download screen to find that out.
+  const quiet = await browser.newContext();
+  await quiet.addInitScript(() => {
+    localStorage.setItem('mathgalaxy.save.v1', JSON.stringify({
+      name: 'Quiet', createdAt: Date.now(), facts: {}, planets: {}, buddies: [], xp: 0,
+      streakBest: 0, trialCounter: 0, history: [],
+      settings: { useMic: false, voicePrompts: false, sound: true },
+    }));
+  });
+  const qp = await quiet.newPage();
+  let modelHits = 0;
+  qp.on('request', (r) => { if (/vosk-model|vosk-browser/.test(r.url())) modelHits++; });
+  await qp.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'domcontentloaded' });
+  await qp.waitForSelector('#screen-home.active', { timeout: 20000 });
+  assert(await qp.evaluate(() => !document.querySelector('#boot-loader')),
+    'the voice download screen showed even with the mic switched off');
+  await qp.waitForTimeout(2000); // give any stray fetch time to appear
+  assert(modelHits === 0, `mic off still fetched the voice model (${modelHits} requests)`);
+
+  // ...and the mic controls are gone rather than sitting there inert.
+  await qp.$eval('#btn-continue', (el) => el.click());
+  await qp.waitForSelector('#screen-galaxy.active');
+  await qp.$$eval('#galaxy-cards .galaxy-card', (els) => els[0].click());
+  await qp.waitForSelector('#screen-map.active');
+  await qp.click('#planet-track .planet-node:not(.locked)');
+  await qp.waitForSelector('#screen-planet.active');
+  await qp.click('#btn-practice');
+  await qp.waitForSelector('#screen-play.active');
+  assert(await qp.isHidden('#mic-btn'), 'the mic button is still showing with the mic switched off');
+  assert(modelHits === 0, `playing with the mic off fetched the voice model (${modelHits} requests)`);
+  console.log('✓ mic off: no voice-model download, no boot wait, no mic button');
+  await quiet.close();
+
   assert(fatal.length === 0, 'uncaught page errors:\n' + fatal.join('\n'));
   console.log('\nE2E PASSED');
 } catch (e) {
