@@ -101,6 +101,7 @@ function ensureMic() {
 // screen and by switching the mic on in settings, which report progress
 // differently — hence the callbacks rather than a fixed UI.
 let voiceLoad = null;
+let voiceReady = false;   // the model is downloaded AND warmed, not just started
 
 function loadVoice({ status = () => {}, progress = () => {} } = {}) {
   if (voiceLoad) return voiceLoad;
@@ -113,6 +114,7 @@ function loadVoice({ status = () => {}, progress = () => {} } = {}) {
     status('Warming up the voice…');
     await buildModel();     // load vosk-browser + instantiate (from cache)
     await mic.preload();    // bind the ready model to our recognizer
+    voiceReady = true;
   })();
   // A failed download must stay retryable — one flaky attempt shouldn't wedge
   // the mic until the page is reloaded.
@@ -989,7 +991,7 @@ function renderMicNote() {
     setMicNote('⚠️ This browser can\'t use the mic here (it needs https or localhost). Tap answers instead — everything still works!');
   } else if (!state.save.settings.useMic) {
     setMicNote('Off — the microphone is never opened and the ~40 MB voice model is never downloaded. Switch it on to fetch it once; after that it works offline.');
-  } else if (voiceLoad) {
+  } else if (voiceReady) {
     setMicNote('Hears spoken numbers on-device — accurate and private, and works offline. Tapping always works too.');
   } else {
     setMicNote('On — the ~40 MB voice model downloads the next time you play. Tapping always works too.');
@@ -1014,7 +1016,7 @@ async function setMicEnabled(on) {
 
   ensureMic();
   syncMicUi();
-  if (voiceLoad) { renderMicNote(); return; } // already downloaded this session
+  if (voiceReady) { renderMicNote(); return; } // already warmed this session
 
   try {
     await loadVoice({
