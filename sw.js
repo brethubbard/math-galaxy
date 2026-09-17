@@ -4,16 +4,24 @@
 // on-device (Vosk), so once the model is cached the whole experience — game,
 // progress, tap AND voice — works with no connection at all.
 //
-// Strategy: precache the app shell on install; serve same-origin GETs
-// cache-first with a background refresh (stale-while-revalidate). Bump CACHE
-// whenever shell files change so clients pick up the new version.
+// Strategy: precache the app shell on install, then serve the shell
+// NETWORK-FIRST with a cache fallback. Cache-first (stale-while-revalidate) was
+// wrong for the shell: navigations are network-first, so a returning child got
+// the NEW index.html running the OLD cached js/*.js + styles.css for a whole
+// load. That version skew is what made the Fluency Run button render (the old
+// styles.css has no `[hidden]` override, and `.btn` sets display:flex) while
+// doing nothing when tapped (the old app.js binds no handler for it). Serving
+// the shell from the network keeps HTML, JS and CSS on the same deploy; the
+// cache is the offline fallback, not the default source.
 //
 // The ~40 MB Vosk model lives in a SEPARATE, persistent cache (MODEL_CACHE,
-// populated by the app at boot — see js/vosk-engine.js). We never delete it on
-// activate, so bumping the shell version never forces a model re-download, and
-// the global caches.match() below serves it to vosk-browser's worker offline.
+// populated by the app at boot — see js/vosk-engine.js). It stays CACHE-FIRST —
+// it is immutable and far too big to revalidate — and we never delete it on
+// activate, so bumping the shell version never forces a re-download.
+//
+// Bump CACHE whenever shell files change so installed clients reinstall.
 
-const CACHE = 'math-galaxy-v8';
+const CACHE = 'math-galaxy-v9';
 const MODEL_CACHE = 'math-galaxy-model';
 
 // Paths are relative to this file's location, so it works under any base path
@@ -69,14 +77,38 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Everything else: stale-while-revalidate. Serve cache immediately if present,
-  // refresh it in the background. Works for same-origin shell and (after first
-  // online load) the cross-origin web font too.
+  // The voice model: cache-first out of the persistent MODEL_CACHE. It never
+  // changes and it is ~40 MB, so it must never be re-fetched to revalidate.
+  // caches.match() is global, which is how vosk-browser's worker gets it offline.
+  if (sameOrigin && url.pathname.includes('/models/')) {
+    e.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
+    return;
+  }
+
+  // The app shell (js, css, manifest, icons): NETWORK-FIRST, cache fallback, so
+  // every file on a given load comes from the same deploy. Refresh the cache on
+  // each success; fall back to it when offline.
+  if (sameOrigin) {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match(req, { ignoreSearch: true }))
+    );
+    return;
+  }
+
+  // Cross-origin (the web font): stale-while-revalidate is fine — it is
+  // versioned by URL, so a stale copy can't disagree with our own code.
   e.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req)
         .then((res) => {
-          // Cache successful or opaque (cross-origin font) responses.
           if (res && (res.ok || res.type === 'opaque')) {
             const copy = res.clone();
             caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
