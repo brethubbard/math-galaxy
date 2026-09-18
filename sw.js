@@ -21,7 +21,7 @@
 //
 // Bump CACHE whenever shell files change so installed clients reinstall.
 
-const CACHE = 'math-galaxy-v9';
+const CACHE = 'math-galaxy-v10';
 const MODEL_CACHE = 'math-galaxy-model';
 
 // Paths are relative to this file's location, so it works under any base path
