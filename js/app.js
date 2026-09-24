@@ -355,7 +355,14 @@ function openPlanet(planetId) {
 // unlock path stays on the regular test, so nobody is gated behind it.
 function renderFluencyButton(rec, galaxy) {
   const btn = $('#btn-fluency');
+  // Hidden in the markup by BOTH `hidden` and an inline display:none, and
+  // revealed here through both. The attribute alone is not enough: `.btn` sets
+  // display:flex, so any styles.css without the `[hidden]` override renders the
+  // button anyway — and a build of app.js that predates it binds no click
+  // handler, giving a visible button that does nothing. sw.js now keeps HTML,
+  // CSS and JS on one deploy; this makes the markup fail safe regardless.
   btn.hidden = !rec.cleared;
+  btn.style.display = rec.cleared ? '' : 'none';
   if (!rec.cleared) return;
 
   const F = E.CONFIG.fluency;
