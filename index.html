@@ -58,6 +58,10 @@
           <span class="rank-badge" id="home-rank">Rank 1</span>
           <span class="buddy-strip" id="home-buddies"></span>
         </div>
+        <div class="goal-row" id="home-goal" hidden>
+          <div class="bar-track tiny"><div class="bar-fill" id="home-goal-bar"></div></div>
+          <span class="goal-label" id="home-goal-label"></span>
+        </div>
         <button class="btn big" id="btn-continue">Continue Journey ✨</button>
         <button class="btn big alt" id="btn-challenge">Challenge Friends ⚔️</button>
         <div class="home-links">
@@ -179,10 +183,12 @@
         <div class="result-stats" id="result-stats"></div>
         <div class="result-review" id="result-review" hidden></div>
         <div class="result-reward hidden" id="result-reward"></div>
+        <div class="goal-banner" id="result-goal" hidden></div>
         <div class="result-actions">
           <button class="btn" id="btn-result-again">Try Again</button>
           <button class="btn alt" id="btn-result-map">Star Map 🗺️</button>
         </div>
+        <button class="btn goal-done" id="btn-result-done" hidden style="display:none">🌙 Done for today</button>
       </div>
     </section>
 
@@ -231,6 +237,11 @@
           <span>🎵 Sound effects</span>
           <input type="checkbox" id="set-sound" />
         </label>
+        <label class="field">
+          <span>🎯 Daily goal</span>
+          <select id="set-goal"></select>
+        </label>
+        <p class="set-note" id="goal-note"></p>
         <label class="field">
           <span>Pilot name</span>
           <input type="text" id="set-name" maxlength="14" />

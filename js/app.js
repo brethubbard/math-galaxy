@@ -50,6 +50,10 @@ const state = {
   audioCtx: null,
   wakeLock: null,
   lastMicCommitAt: 0,   // suppress trailing recognizer results after a voice answer
+  goalTimer: null,      // daily-goal clock (engine); only runs while answering
+  goalTimerFor: null,   // the save that clock was built around (a new pilot needs a new one)
+  goalTick: null,       // its 1s interval
+  goalSavedAt: 0,       // last time the tally was written to localStorage
 };
 
 // ===========================================================================
@@ -259,7 +263,22 @@ function renderHome(returning) {
     const lvl = E.xpLevel(state.save.xp);
     $('#home-rank').textContent = `Rank ${lvl.rank}`;
     $('#home-buddies').textContent = state.save.buddies.join(' ') || '✨';
+    renderHomeGoal();
   }
+}
+
+// Today's practice, shown where it can't become a clock to race: on the way in,
+// not while answering.
+function renderHomeGoal() {
+  const row = $('#home-goal');
+  const g = E.goalProgress(state.save);
+  row.hidden = !g.on;
+  if (!g.on) return;
+  row.classList.toggle('met', g.met);
+  $('#home-goal-bar').style.width = `${g.pct}%`;
+  $('#home-goal-label').textContent = g.met
+    ? `🌙 Goal done — ${g.minutes} min`
+    : `⏱ ${g.minutes} of ${g.goalMinutes} min today`;
 }
 
 // ===========================================================================
@@ -429,6 +448,7 @@ async function startPlay(mode) {
   syncMicUi();
   showScreen('play');
   requestWakeLock(); // keep the screen on while playing (kids pause to think)
+  startGoalClock();
   const dbgEng = $('#dbg-eng'); if (dbgEng) dbgEng.textContent = `· vosk · mic ${micEnabled() ? 'on' : 'off'}`;
   dbg('start', `micEnabled=${micEnabled()}`);
   if (micEnabled()) state.mic.start();
@@ -436,6 +456,48 @@ async function startPlay(mode) {
 }
 
 function micEnabled() { return !!(state.mic && voskSupported && state.save?.settings.useMic); }
+
+// ---------------------------------------------------------------------------
+// Daily goal clock
+//
+// Runs only while the child is answering - the play screen and challenge
+// matches - and pauses itself after CONFIG.dailyGoal.idleMs without a tap,
+// answer or spoken guess, so a session left open on the couch stops banking
+// time. Deliberately INVISIBLE during play: this app shows no clock a child can
+// race (the fluency run's is the one exception, and that one is opt-in). Today's
+// total lives on the home screen and in Settings instead.
+// ---------------------------------------------------------------------------
+const GOAL_SAVE_EVERY_MS = 15000; // don't hammer localStorage once a second
+
+function startGoalClock() {
+  if (!state.save) return;
+  // The timer banks into the save it was created with, so a reset or a new pilot
+  // must get a fresh one — otherwise the time lands in a detached object.
+  if (!state.goalTimer || state.goalTimerFor !== state.save) {
+    state.goalTimer = E.createDailyTimer(state.save);
+    state.goalTimerFor = state.save;
+  }
+  state.goalTimer.start();
+  if (state.goalTick) return;
+  state.goalTick = setInterval(() => {
+    if (!state.goalTimer.tick()) return;
+    if (Date.now() - state.goalSavedAt >= GOAL_SAVE_EVERY_MS) {
+      E.persist(state.save);
+      state.goalSavedAt = Date.now();
+    }
+  }, 1000);
+}
+
+function stopGoalClock() {
+  if (state.goalTick) { clearInterval(state.goalTick); state.goalTick = null; }
+  if (!state.goalTimer || !state.save) return;
+  state.goalTimer.stop();          // banks the final partial second
+  E.persist(state.save);
+  state.goalSavedAt = Date.now();
+}
+
+// Called from every place a child proves they're still flying.
+function goalTouch() { state.goalTimer?.touch(); }
 
 // ---- Screen Wake Lock: stop the device dimming/sleeping mid-problem ----
 async function requestWakeLock() {
@@ -453,7 +515,14 @@ async function releaseWakeLock() {
 // The OS releases the lock when the page is backgrounded; re-acquire on return
 // if we're still in the middle of playing.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && state.screen === 'play') requestWakeLock();
+  const playing = state.screen === 'play' || state.screen === 'versus';
+  if (document.visibilityState === 'visible') {
+    if (state.screen === 'play') requestWakeLock();
+    // Resume the goal clock only if a session is genuinely still in progress.
+    if (playing && (state.play || mp.phase === 'question')) startGoalClock();
+  } else {
+    stopGoalClock(); // a backgrounded tab isn't practice — bank what we have
+  }
 });
 
 function buildDots(n) {
@@ -544,6 +613,7 @@ function setFeedback(txt, cls = '') {
 function onKey(k) {
   const play = state.play;
   if (!play) return;
+  goalTouch();
   if (play.locked && !cutPrompt(play)) return;
   if (k === 'enter') { if (play.answerStr !== '') commit(parseInt(play.answerStr, 10)); return; }
   if (k === 'back') { play.answerStr = play.answerStr.slice(0, -1); }
@@ -557,6 +627,7 @@ function onKey(k) {
 function wireMic(mic) {
   mic.onDebug = (tag, info) => dbg(tag, info); // Vosk diagnostics (audio flow, raw text)
   mic.onHeard = (candidates, transcript, isFinal) => {
+    goalTouch();
     // In a multiplayer race the mic feeds the versus screen instead.
     if (state.screen === 'versus') { versusHeard(candidates, transcript, isFinal); return; }
     const play = state.play;
@@ -613,6 +684,7 @@ function wireMic(mic) {
 }
 
 function toggleMic() {
+  goalTouch();
   if (!micEnabled()) return; // switched off in settings — the button is hidden too
   if (!state.mic.listening) { state.mic.start(); $('#mic-btn').classList.remove('off'); }
   else { state.mic.stop(); }
@@ -624,6 +696,7 @@ function commit(value, viaMic = false) {
   if (!play || play.locked) return;
   play.locked = true;
   play.lockReason = 'feedback';
+  goalTouch();
   if (viaMic) state.lastMicCommitAt = performance.now(); // start the suppression window
 
   const elapsed = performance.now() - play.startedAt;
@@ -699,6 +772,11 @@ function scheduleAdvance(play, ms) {
 function advance() {
   const play = state.play;
   if (!play) return;
+  // The daily goal's stopping point in PRACTICE: the question just finished, so
+  // end the session into its summary, which carries the goal banner. A test or a
+  // fluency run is never cut short here - each has its own finish line, and its
+  // result screen is the stopping point instead.
+  if (play.mode === 'practice' && E.goalDue(state.save)) return finishPractice();
   if (play.mode === 'fluency') {
     if (play.fluency.done) return;
     if (Date.now() >= play.fluency.endsAt) return finishFluency();
@@ -727,6 +805,7 @@ function markDot(i, cls) {
 function endPlay() {
   if (state.play) clearTimeout(state.play.advanceTimer);
   stopFluencyClock();
+  stopGoalClock();
   if (state.mic) state.mic.stop();
   releaseWakeLock();
   try { speechSynthesis.cancel(); } catch (_) {}
@@ -740,6 +819,7 @@ function finishTest() {
   clearTimeout(play.advanceTimer);
   if (state.mic) state.mic.stop();
   releaseWakeLock();
+  stopGoalClock();
   const grade = E.gradeTest(state.save, play.planetId, play.test.results);
   E.persist(state.save);
   showResult(grade, play.planetId);
@@ -780,6 +860,7 @@ function finishFluency() {
   play.fluency.done = true;
   clearTimeout(play.advanceTimer);
   stopFluencyClock();
+  stopGoalClock();
   if (state.mic) state.mic.stop();
   releaseWakeLock();
   try { speechSynthesis.cancel(); } catch (_) {}
@@ -815,6 +896,29 @@ function renderReview(missed) {
     (rest > 0 ? `<p class="rv-more">…and ${rest} more to work on 💪</p>` : '');
 }
 
+// The one place the goal ever speaks up. Only on a result screen, and only once
+// a day - after that the tally keeps running quietly and nobody is nagged again.
+function renderGoalBanner() {
+  const el = $('#result-goal');
+  const done = $('#btn-result-done');
+  const due = !!state.save && E.goalDue(state.save);
+  el.hidden = !due;
+  done.hidden = !due;
+  done.style.display = due ? '' : 'none'; // `.btn` is display:flex, so `hidden` alone can lose
+  if (!due) return;
+
+  const g = E.goalProgress(state.save);
+  el.innerHTML =
+    '<span class="goal-moon">\u{1F319}</span>' +
+    `<b>Daily goal done!</b><br>That's your <b>${g.goalMinutes} minutes</b> of practice today — ` +
+    `nice flying, ${escapeHtml(state.save.name)}! \u2b50<br>` +
+    '<small>Keep going if you\u2019re having fun — the goal is met either way.</small>';
+  done.onclick = () => navTo('home');
+
+  E.markGoalShown(state.save);
+  E.persist(state.save);
+}
+
 function showFluencyResult(grade, planetId) {
   const F = E.CONFIG.fluency;
   $('#result-burst').textContent = grade.newStar ? '🏆' : grade.accurate ? '⚡' : '🎯';
@@ -839,6 +943,7 @@ function showFluencyResult(grade, planetId) {
     tail;
 
   renderReview(grade.missed);
+  renderGoalBanner();
 
   const reward = $('#result-reward');
   if (grade.newStar) {
@@ -862,6 +967,7 @@ function finishPractice() {
   clearTimeout(play.advanceTimer);
   if (state.mic) state.mic.stop();
   releaseWakeLock();
+  stopGoalClock();
   const { count, correct } = play.practice;
   const acc = count ? Math.round((correct / count) * 100) : 0;
   state.play = null;
@@ -873,6 +979,7 @@ function finishPractice() {
   $('#result-stats').innerHTML =
     `You tried <b>${count}</b> facts and got <b>${correct}</b> right (<b>${acc}%</b>).<br>Every try makes your brain stronger! 🧠`;
   $('#result-reward').classList.add('hidden');
+  renderGoalBanner();
   $('#btn-result-again').textContent = 'Practice More';
   $('#btn-result-again').onclick = () => { openPlanet(play.planetId); startPlay('practice'); };
   $('#btn-result-map').onclick = () => navTo('map');
@@ -896,6 +1003,7 @@ function showResult(grade, planetId) {
     (cleared ? '' : `<small>Reach ${Math.round(E.CONFIG.testAccuracy * 100)}% to clear this planet — you're almost there!</small>`);
 
   renderReview(grade.missed);
+  renderGoalBanner();
 
   const reward = $('#result-reward');
   if (grade.newlyCleared) {
@@ -1066,6 +1174,7 @@ function renderSettings() {
   $('#set-voice').checked = s.voicePrompts && voiceOk;
   $('#set-voice').disabled = !voiceOk;
   $('#set-sound').checked = s.sound;
+  renderGoalSetting();
   $('#set-name').value = state.save.name;
   renderMicNote();
   $('#voice-support-note').textContent = voiceOk
@@ -1077,12 +1186,41 @@ function renderSettings() {
   $('#set-mic').onchange = (e) => setMicEnabled(e.target.checked);
   $('#set-voice').onchange = (e) => { state.save.settings.voicePrompts = e.target.checked; E.persist(state.save); };
   $('#set-sound').onchange = (e) => { state.save.settings.sound = e.target.checked; E.persist(state.save); };
+  $('#set-goal').onchange = (e) => {
+    state.save.settings.dailyGoalMin = parseInt(e.target.value, 10) || 0;
+    E.persist(state.save);
+    renderGoalNote();
+  };
   $('#set-name').onchange = (e) => { state.save.name = e.target.value.trim() || 'Space Pilot'; E.persist(state.save); };
   $('#btn-reset').onclick = () => {
     if (confirm('Reset ALL progress? This cannot be undone.')) {
       E.resetSave(); state.save = null; renderHome(false); navTo('home');
     }
   };
+}
+
+// How long a day's practice should be. The choices come from CONFIG so the knob
+// lives in exactly one place; 0 switches the goal off entirely.
+function renderGoalSetting() {
+  const sel = $('#set-goal');
+  const mins = Number(state.save.settings.dailyGoalMin) || 0;
+  const choices = [...E.CONFIG.dailyGoal.choices];
+  if (mins > 0 && !choices.includes(mins)) choices.push(mins); // honour a hand-edited save
+  sel.innerHTML =
+    '<option value="0">Off — no goal</option>' +
+    choices.sort((a, b) => a - b).map((m) => `<option value="${m}">${m} minutes a day</option>`).join('');
+  sel.value = String(mins);
+  renderGoalNote();
+}
+
+function renderGoalNote() {
+  const g = E.goalProgress(state.save);
+  const idleSec = Math.round(E.CONFIG.dailyGoal.idleMs / 1000);
+  $('#goal-note').textContent = g.on
+    ? `${g.minutes} of ${g.goalMinutes} minutes practiced today. The clock runs only while `
+      + `answering and pauses after ${idleSec}s of quiet — when the goal is reached, Math Galaxy `
+      + 'offers a stopping point after the current practice question, test or fluency run. Never mid-run.'
+    : 'No daily goal — play for as long as you like.';
 }
 
 // ===========================================================================
@@ -1384,6 +1522,7 @@ function onVersusState(snap) {
   if (state.screen !== 'versus' && snap.phase !== 'ended') {
     showScreen('versus');
     requestWakeLock();
+    startGoalClock();
   }
 
   if (snap.phase === 'countdown') { runVersusCountdown(); return; }
@@ -1505,6 +1644,7 @@ function setVersusInputEnabled(on) {
 }
 
 function onVersusKey(k) {
+  goalTouch();
   if (mp.phase !== 'question' || mp.answered || mp.locked) return;
   if (k === 'enter') { if (mp.answerStr !== '') submitVersus(parseInt(mp.answerStr, 10)); return; }
   if (k === 'back') mp.answerStr = mp.answerStr.slice(0, -1);
@@ -1556,6 +1696,7 @@ function showVersusResult(snap) {
   if (mp._countdownTimer) clearInterval(mp._countdownTimer);
   if (state.mic) state.mic.stop();
   releaseWakeLock();
+  stopGoalClock();
   const standings = (snap.players || []).slice().sort((a, b) => b.score - a.score);
   const top = standings[0] ? standings[0].score : 0;
   const winners = standings.filter((p) => p.score === top);
@@ -1585,6 +1726,7 @@ function leaveChallenge() {
   if (mp._countdownTimer) clearInterval(mp._countdownTimer);
   if (state.mic) state.mic.stop();
   releaseWakeLock();
+  stopGoalClock();
   if (mp.session) { try { mp.session.leave(); } catch (_) {} }
   mp.session = null; mp.mode = null; mp.phase = 'lobby'; mp.qIndex = -1;
   navTo('home');

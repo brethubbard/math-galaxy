@@ -54,6 +54,22 @@ export const CONFIG = {
     goodMs: 250,          // pause after a correct answer
     badMs: 900,           // pause after a miss (long enough to read the answer)
   },
+
+  // --- daily goal: a time budget, not a countdown ---
+  // Measures time spent ANSWERING (solo play and challenge matches), never time
+  // the app merely sits open, and pauses within idleMs of the last tap, answer
+  // or spoken guess - a session abandoned on the couch banks idleMs and no more.
+  // 15s is long enough to think hard about 7x8 and short enough that a walk-away
+  // costs ~2% of a 10-minute goal. Time only stops being credited; the moment a
+  // key is tapped again the clock picks up where it left off.
+  // The goal is only ever raised at a stopping point (see goalDue), so a test or
+  // a fluency run is never cut short by the clock.
+  dailyGoal: {
+    defaultMin: 10,                 // out of the box
+    choices: [5, 10, 15, 20, 30],   // what Settings offers (0 = off)
+    idleMs: 15000,                  // grace after the last activity before it pauses
+    maxChunkMs: 5000,               // a bigger jump means the tab was asleep - drop it
+  },
 };
 
 export function fluencyDurationMs(op) {
@@ -85,7 +101,8 @@ export function newSave(name) {
     xp: 0,
     streakBest: 0,
     trialCounter: 0,
-    settings: { useMic: true, voicePrompts: true, sound: true },
+    settings: { useMic: true, voicePrompts: true, sound: true, dailyGoalMin: CONFIG.dailyGoal.defaultMin },
+    daily: blankDaily(),
     history: [],
   };
   seedPlanets(save);
@@ -95,6 +112,8 @@ export function newSave(name) {
 function migrate(save) {
   if (!save.settings) save.settings = { useMic: true, voicePrompts: true, sound: true };
   delete save.settings.engine; // legacy: speech engine choice is gone (Vosk only)
+  if (save.settings.dailyGoalMin == null) save.settings.dailyGoalMin = CONFIG.dailyGoal.defaultMin;
+  if (!save.daily) save.daily = blankDaily();
   if (!save.buddies) save.buddies = [];
   if (!save.history) save.history = [];
   if (!save.planets) save.planets = {};
@@ -124,6 +143,91 @@ export function resetSave() {
 function fact(save, key) {
   if (!save.facts[key]) save.facts[key] = blankFact();
   return save.facts[key];
+}
+
+// ---------------------------------------------------------------------------
+// Daily goal
+//
+// A day's practice is tallied in the save as { date, ms, celebrated }, keyed by
+// the LOCAL date so a day rolls over at the child's midnight, not UTC's. Time is
+// banked by createDailyTimer while the child is actually answering; goalDue()
+// then tells the UI that the goal has been met but not yet acknowledged - the
+// app asks that question only at a stopping point, so nothing gets interrupted.
+// ---------------------------------------------------------------------------
+export function todayKey(now = Date.now()) {
+  const d = new Date(now);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function blankDaily(now = Date.now()) {
+  return { date: todayKey(now), ms: 0, celebrated: false };
+}
+
+// Today's tally, rolling the record over if the save is from a previous day.
+export function dailyToday(save, now = Date.now()) {
+  if (!save.daily || save.daily.date !== todayKey(now)) save.daily = blankDaily(now);
+  return save.daily;
+}
+
+// 0 (or an unset/garbage value) means the goal is switched off.
+export function goalMs(save) {
+  const min = Number(save?.settings?.dailyGoalMin);
+  return Number.isFinite(min) && min > 0 ? min * 60000 : 0;
+}
+
+export function goalProgress(save, now = Date.now()) {
+  const d = dailyToday(save, now);
+  const goal = goalMs(save);
+  return {
+    on: goal > 0,
+    ms: d.ms,
+    goalMs: goal,
+    minutes: Math.floor(d.ms / 60000),
+    goalMinutes: Math.round(goal / 60000),
+    pct: goal ? Math.min(100, Math.round((d.ms / goal) * 100)) : 0,
+    met: goal > 0 && d.ms >= goal,
+    celebrated: !!d.celebrated,
+  };
+}
+
+// Met, and not yet shown to the child. Checked only at stopping points.
+export function goalDue(save, now = Date.now()) {
+  const p = goalProgress(save, now);
+  return p.met && !p.celebrated;
+}
+
+// Shown once a day. Practice carries on afterwards, silently - hitting the goal
+// is an offer to stop, never a lockout, and never a second nag.
+export function markGoalShown(save, now = Date.now()) {
+  dailyToday(save, now).celebrated = true;
+}
+
+export function createDailyTimer(save, now = Date.now()) {
+  const G = CONFIG.dailyGoal;
+  let running = false;
+  let lastTick = now;
+  let lastActive = now;
+
+  return {
+    get running() { return running; },
+    start(t = Date.now()) { running = true; lastTick = t; lastActive = t; },
+    stop(t = Date.now()) { this.tick(t); running = false; },
+    // Any tap, answer or spoken guess: proof the child is still at the controls.
+    touch(t = Date.now()) { lastActive = t; },
+    // Bank the time since the last tick. Returns the ms actually credited.
+    tick(t = Date.now()) {
+      if (!running) return 0;
+      const from = lastTick;
+      lastTick = t;
+      if (t - from > G.maxChunkMs) return 0;        // tab was asleep - not practice
+      const until = Math.min(t, lastActive + G.idleMs); // never credit past the grace
+      const delta = until - from;
+      if (delta <= 0) return 0;                     // idle: the clock is paused
+      dailyToday(save, t).ms += delta;
+      return delta;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

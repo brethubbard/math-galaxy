@@ -76,9 +76,10 @@ npm run test:watch
 ```
 
 Tests cover the fact engine across all three operations, the weighted practice draw, the
-fluency run and its star thresholds, and the serverless multiplayer match loop
-(`js/multiplayer.js`). `npm run test:e2e` drives the whole solo flow in a real browser,
-including clearing a planet and running it for fluency. CI runs them on every
+fluency run and its star thresholds, the daily-goal clock (what counts as practice time,
+when it pauses, and that it never interrupts a run), and the serverless multiplayer match
+loop (`js/multiplayer.js`). `npm run test:e2e` drives the whole solo flow in a real browser,
+including clearing a planet, running it for fluency, and meeting the daily goal. CI runs them on every
 pull request (`.github/workflows/ci.yml`).
 
 ---
@@ -179,6 +180,33 @@ Per-fact **Leitner boxes (1–5)** drive what shows up next:
   getting rehearsed, not just the hard stuff.
 - **Mastered** = box 5. The stats grid colors every fact by its box.
 
+### The daily goal — a stopping point, not a stopwatch
+A short daily habit beats a marathon once a week, so Math Galaxy tracks how long
+the child actually practiced today and offers a **natural place to stop** once
+they hit it. **10 minutes by default**, changeable (or switched off) in Settings.
+
+- **It measures practice, not screen time.** The clock runs only while a child is
+  *answering* — the play screen and challenge matches — and **pauses within 15
+  seconds** of the last tap, answer or spoken guess. A session abandoned on the
+  couch banks those 15 seconds and nothing more; a tap picks it straight back up.
+  Time browsing the map, the stats grid or Settings never counts.
+- **It never interrupts anything.** The goal is only ever raised at a *stopping
+  point*: after a practice question, after a test, or after a fluency run. A test
+  or a timed run in flight is left strictly alone — crossing the goal mid-run
+  simply means the banner is waiting on the result screen.
+- **In practice**, the question in flight finishes and the session ends into its
+  usual summary, which carries the goal banner and a **🌙 Done for today** button.
+  Carrying on is one tap (*Practice More*), because the goal is an offer, not a wall.
+- **It asks once a day.** After that the tally keeps running quietly — no second nag.
+- **No clock while playing.** Today's progress lives on the home screen and in
+  Settings, never on the play screen: this app deliberately shows a child no clock
+  to race (the opt-in Fluency Run is the one exception).
+- A day rolls over at the child's **local midnight**, and the tally is saved with
+  everything else in `localStorage`.
+
+The knobs — the default, the choices Settings offers, and the idle grace — live in
+`CONFIG.dailyGoal` in `js/engine.js`.
+
 ### Anti-anxiety, by design
 No countdown clock, no red "X wrong" tally, no leaderboard. Misses get a kind "It's 56 —
 you'll get it next time! 💪" and come back sooner. Short sessions, a visible finish line,
@@ -237,7 +265,7 @@ All progress is saved in `localStorage` on the device — no backend, nothing le
 ## Tuning
 
 The knobs live in `CONFIG` at the top of `js/engine.js` — speed threshold, accuracy gate,
-test length, XP. The planet sequence and hints live in `js/levels.js`.
+test length, XP, and the daily goal (`CONFIG.dailyGoal`). The planet sequence and hints live in `js/levels.js`.
 
 ---
 

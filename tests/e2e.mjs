@@ -252,6 +252,124 @@ try {
   await page.click('#btn-quit-play');
   await page.waitForSelector('#screen-map.active');
 
+  // --- the daily goal: a stopping point, never an interruption ---
+  // Two profiles, both mic-off so neither waits on the voice model: one with the
+  // goal barely started (does the clock run at all?) and one with it already met
+  // (where does it come up, and where must it NOT?).
+  // NB: an init script runs in the BROWSER, so the seed values have to be passed
+  // as an argument — a closure over them would arrive undefined.
+  const seedGoal = ({ min, ms }) => {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    localStorage.setItem('mathgalaxy.save.v1', JSON.stringify({
+      name: 'Goalie', createdAt: Date.now(), facts: {}, planets: {}, buddies: [], xp: 0,
+      streakBest: 0, trialCounter: 0, history: [],
+      settings: { useMic: false, voicePrompts: false, sound: false, dailyGoalMin: min },
+      daily: { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, ms, celebrated: false },
+    }));
+  };
+
+  // Open a seeded profile on its home screen.
+  async function goalPage(min, ms) {
+    const ctx = await browser.newContext();
+    await ctx.addInitScript(seedGoal, { min, ms });
+    const gp = await ctx.newPage();
+    gp.on('pageerror', (e) => fatal.push('PAGEERROR: ' + e.message));
+    await gp.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'domcontentloaded' });
+    await gp.waitForSelector('#screen-home.active', { timeout: 20000 });
+    return { ctx, gp };
+  }
+  async function toPlanet(gp) {
+    await gp.$eval('#btn-continue', (el) => el.click());
+    await gp.waitForSelector('#screen-galaxy.active');
+    await gp.$$eval('#galaxy-cards .galaxy-card', (els) => els[0].click());
+    await gp.waitForSelector('#screen-map.active');
+    await gp.click('#planet-track .planet-node:not(.locked)');
+    await gp.waitForSelector('#screen-planet.active');
+  }
+  const answerOn = async (gp) => {
+    const q = await gp.evaluate(() => ({
+      a: +document.querySelector('#q-a').textContent,
+      op: document.querySelector('#q-op').textContent,
+      b: +document.querySelector('#q-b').textContent,
+    }));
+    const v = q.op === '×' ? q.a * q.b : q.op === '+' ? q.a + q.b : q.a - q.b;
+    for (const ch of String(v)) await gp.click(`#keypad button[data-k="${ch}"]`);
+    await gp.click('#keypad button[data-k="enter"]');
+    await gp.waitForFunction(
+      () => document.querySelector('#screen-result')?.classList.contains('active')
+        || document.querySelector('#answer-slot')?.textContent === '?',
+      null, { timeout: 15000 });
+  };
+
+  {
+    const { ctx, gp } = await goalPage(10, 0);
+    await toPlanet(gp);
+    await gp.click('#btn-practice');
+    await gp.waitForSelector('#screen-play.active');
+    for (let i = 0; i < 3; i++) await answerOn(gp);   // a few seconds of real answering
+    await gp.click('#btn-quit-play');                 // quitting banks the time
+    await gp.waitForSelector('#screen-map.active');
+    const banked = await gp.evaluate(() =>
+      JSON.parse(localStorage.getItem('mathgalaxy.save.v1')).daily.ms);
+    assert(banked > 0, 'the daily goal clock banked nothing during a practice session');
+    assert(banked < 60000, `the clock banked ${banked}ms for a few seconds of play`);
+
+    // ...and it shows up where a child can't race it: the home screen, not play.
+    await gp.click('#screen-map.active [data-nav="galaxy"]');
+    await gp.waitForSelector('#screen-galaxy.active');
+    await gp.click('#screen-galaxy.active [data-nav="home"]');
+    await gp.waitForSelector('#screen-home.active');
+    assert(await gp.isVisible('#home-goal'), 'the home screen shows no daily-goal progress');
+    const label = await gp.textContent('#home-goal-label');
+    assert(/of 10 min today/.test(label), `unexpected goal label "${label}"`);
+    console.log(`✓ daily goal: ${banked}ms banked while answering, shown as "${label.trim()}"`);
+    await ctx.close();
+  }
+
+  {
+    const { ctx, gp } = await goalPage(1, 60000); // goal already met, not yet raised
+    await toPlanet(gp);
+
+    // A TEST must run to its own finish line — the goal waits.
+    await gp.click('#btn-test');
+    await gp.waitForSelector('#screen-play.active');
+    for (let i = 0; i < 4; i++) await answerOn(gp);
+    assert(await gp.isVisible('#screen-play.active'), 'the daily goal cut a test short');
+    const done = await gp.$$eval('#test-dots .dot.right, #test-dots .dot.wrong', (e) => e.length);
+    assert(done === 4, `the test should have 4 answered dots, got ${done}`);
+    console.log('✓ daily goal: a test in progress is never interrupted');
+
+    await gp.click('#btn-quit-play');
+    await gp.waitForSelector('#screen-map.active');
+    await gp.click('#planet-track .planet-node:not(.locked)');
+    await gp.waitForSelector('#screen-planet.active');
+
+    // PRACTICE: the stopping point is the end of the question in flight.
+    await gp.click('#btn-practice');
+    await gp.waitForSelector('#screen-play.active');
+    await answerOn(gp);
+    await gp.waitForSelector('#screen-result.active', { timeout: 5000 });
+    assert(await gp.isVisible('#result-goal'), 'no daily-goal banner at the stopping point');
+    assert(await gp.isVisible('#btn-result-done'), 'no way to stop for the day');
+    const goalTxt = (await gp.textContent('#result-goal')).replace(/\s+/g, ' ');
+    assert(/Daily goal done/.test(goalTxt), `unexpected goal banner "${goalTxt}"`);
+    console.log('✓ daily goal: comes up after a practice question, with a way to stop');
+
+    // ...and it is an offer, not a wall: carrying on is one tap, and it must not
+    // ask twice in the same day.
+    await gp.click('#btn-result-again');
+    await gp.waitForSelector('#screen-play.active');
+    await answerOn(gp);
+    await gp.waitForTimeout(400);
+    assert(await gp.isVisible('#screen-play.active'), 'the daily goal came up a second time');
+    assert(await gp.evaluate(() =>
+      JSON.parse(localStorage.getItem('mathgalaxy.save.v1')).daily.celebrated === true),
+      'the goal was not marked as already shown');
+    console.log('✓ daily goal: keeps flying on one tap, and never nags twice');
+    await ctx.close();
+  }
+
   // --- "microphone off" must actually mean off ---
   // A fresh profile with the mic switched off must not fetch the ~40 MB voice
   // model, and must not sit behind the download screen to find that out.

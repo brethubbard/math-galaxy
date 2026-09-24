@@ -107,6 +107,11 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 .rank-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .rank-badge { background: var(--accent); color: #20184a; font-weight: 700; padding: 6px 14px; border-radius: 999px; }
 .buddy-strip { font-size: 1.5rem; letter-spacing: 2px; }
+.goal-row { display: flex; align-items: center; gap: 10px; margin: -6px 0 18px; }
+.goal-row .bar-track { flex: 1; }
+.goal-label { color: var(--ink-dim); font-size: .85rem; white-space: nowrap; }
+.goal-row.met .bar-fill { background: linear-gradient(90deg, var(--good), var(--accent2)); }
+.goal-row.met .goal-label { color: var(--good); }
 .home-links { display: flex; justify-content: space-around; margin-top: 14px; }
 
 /* ---------- top bar ---------- */
@@ -297,6 +302,23 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 .rv-times { color: var(--accent); font-weight: 600; }
 .rv-more { margin: 8px 0 0; font-size: .85rem; color: var(--ink-dim); text-align: center; }
 
+/* The daily-goal banner is calm on purpose: a moon, not a trophy. Hitting the
+   goal is an invitation to stop, not a prize that outshines the planet's own. */
+.goal-banner {
+  margin: 14px 0; padding: 14px 16px; border-radius: 16px; line-height: 1.5;
+  background: rgba(138,180,255,.14); border: 1px solid var(--card-edge); color: var(--ink-dim);
+}
+.goal-banner b { color: var(--ink); font-size: 1.1rem; }
+.goal-banner .goal-moon { font-size: 2.2rem; display: block; margin-bottom: 4px; }
+/* A quiet way out, not a third bright call to action: the stars stay the
+   brightest thing on the screen. */
+.btn.goal-done {
+  margin-top: 12px; width: 100%; font-size: 1rem; color: var(--ink);
+  background: rgba(138,180,255,.2); border: 1px solid var(--card-edge);
+  box-shadow: 0 6px 0 rgba(24,34,72,.85), var(--shadow);
+}
+.btn.goal-done:active { box-shadow: 0 2px 0 rgba(24,34,72,.85), var(--shadow); }
+
 .result-reward { font-size: 1.1rem; margin: 14px 0; padding: 14px; border-radius: 16px; background: rgba(108,229,200,.14); border: 1px solid var(--card-edge); }
 .result-reward .big-buddy { font-size: 3rem; display: block; }
 .result-actions { display: flex; gap: 12px; margin-top: 20px; }
@@ -340,6 +362,13 @@ input[type=text]:focus { outline: none; border-color: var(--accent); }
 .field { flex-direction: column; align-items: stretch; }
 .field span { margin-bottom: 8px; }
 .field input { margin: 0; }
+.field select {
+  width: 100%; font-family: var(--font); font-size: 1.1rem; color: var(--ink);
+  background: rgba(0,0,0,.25); border: 2px solid var(--card-edge); border-radius: 14px;
+  padding: 13px 16px; text-align: center; appearance: none;
+}
+.field select:focus { outline: none; border-color: var(--accent); }
+.field select option { background: var(--bg1); color: var(--ink); }
 .toggle input { width: 28px; height: 28px; accent-color: var(--accent2); }
 .set-note { color: var(--ink-dim); font-size: .85rem; margin: -4px 6px 6px; }
 
