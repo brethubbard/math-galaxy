@@ -36,13 +36,15 @@ export const CONFIG = {
   starveAfter: 3,       // force a fact in if unseen for (pool size x this) trials
 
   // --- fluency run: stars 4 and 5 ---
-  // One bar for every operation. 21/min is the ~3s-per-fact retrieval boundary;
-  // 30/min is the ~2s-per-fact automaticity criterion. The run window is shorter
-  // for the +/- galaxies (younger kids) - the per-minute bar is identical, only
-  // the sampling window changes, so fatigue doesn't masquerade as slowness.
+  // One bar for every operation. 16/min (~3.75s per fact, pauses included) is a
+  // step past the 4s clearing bar; 21/min is the ~3s-per-fact retrieval
+  // boundary. The ~2s automaticity criterion (30/min) is deliberately left as a
+  // personal best rather than a star, so it isn't out of reach for most kids.
+  // The run window is shorter for the +/- galaxies (younger kids) - the
+  // per-minute bar is identical, only the sampling window changes, so fatigue doesn't masquerade as slowness.
   fluency: {
-    rate4: 21,            // correct facts per minute for the 4th star
-    rate5: 30,            // ...and the 5th
+    rate4: 16,            // correct facts per minute for the 4th star
+    rate5: 21,            // ...and the 5th
     accuracyFloor: 0.9,   // speed without accuracy earns nothing
     durationMs: { mul: 180000, add: 120000, sub: 120000 },
     currentShare: 0.6,    // share of questions drawn from THIS planet's facts
