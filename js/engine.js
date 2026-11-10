@@ -36,13 +36,18 @@ export const CONFIG = {
   starveAfter: 3,       // force a fact in if unseen for (pool size x this) trials
 
   // --- fluency run: stars 4 and 5 ---
-  // One bar for every operation. 21/min is the ~3s-per-fact retrieval boundary;
-  // 30/min is the ~2s-per-fact automaticity criterion. The run window is shorter
-  // for the +/- galaxies (younger kids) - the per-minute bar is identical, only
-  // the sampling window changes, so fatigue doesn't masquerade as slowness.
+  // One bar for every operation, tuned for multiplication on the keypad.
+  // The research's ~2s automaticity criterion is for SPOKEN answers. Here the
+  // wall clock also pays for tapping 2 digits + Enter (~0.8-1s for a child) and
+  // the 250ms post-answer pause, so a child who is automatic by that spoken
+  // standard lands around 21-26/min. 24/min (2.5s per fact) is the strict end
+  // of that range. 16/min (~3.75s) is one step past the 4s clearing bar.
+  // The run window is shorter for the +/- galaxies (younger kids) - the
+  // per-minute bar is identical, only the sampling window changes, so fatigue
+  // doesn't masquerade as slowness.
   fluency: {
-    rate4: 21,            // correct facts per minute for the 4th star
-    rate5: 30,            // ...and the 5th
+    rate4: 16,            // correct facts per minute for the 4th star
+    rate5: 24,            // ...and the 5th
     accuracyFloor: 0.9,   // speed without accuracy earns nothing
     durationMs: { mul: 180000, add: 120000, sub: 120000 },
     currentShare: 0.6,    // share of questions drawn from THIS planet's facts

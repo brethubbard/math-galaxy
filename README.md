@@ -130,8 +130,11 @@ Clearing a planet proves *procedural reliability*. The last two stars are about
 - A fixed timed window — **3 min** for multiplication, **2 min** for + and −, the shorter
   window keeping fatigue from masquerading as slowness in younger children.
 - Scored as **correct facts per minute against a wall clock**, the same thing a teacher's
-  timed fact sheet measures: **21/min → ★4**, **30/min → ★5**. Those map to the ~3s
-  retrieval boundary and the ~2s automaticity criterion respectively.
+  timed fact sheet measures: **16/min → ★4**, **24/min → ★5**. The research's ~2s
+  automaticity criterion is for *spoken* answers; on the keypad, tapping 2 digits + Enter
+  (~0.8–1s for a child) and the 250ms post-answer pause also come out of the clock, so a
+  child who is automatic by that standard lands around 21–26/min. ★5 sits at the strict
+  end of that range (2.5s per fact). ★4 (~3.75s per fact) is one step past the 4s clearing bar.
 - **Speed alone earns nothing.** A run must clear **90% accuracy** *and* 90% on the current
   planet's own facts — so a child can't coast on easy review facts while missing the new ones.
   Speed and accuracy are reported as one result, because either alone is meaningless.
@@ -146,7 +149,7 @@ Clearing a planet proves *procedural reliability*. The last two stars are about
   loop the same three questions). Current-planet facts come from a bag — every one appears
   before any repeats — while review facts are drawn by the same struggle-weighting practice
   uses.
-- The run is deliberately **lean**: no spoken prompt, a clipped pause, no confetti. At 2
+- The run is deliberately **lean**: no spoken prompt, a clipped pause, no confetti. At 3
   seconds per fact, every celebration is time the child doesn't get back.
 - A star once earned is **never taken away** by a weaker later run.
 
@@ -160,7 +163,7 @@ All six numbers (both rates, the accuracy floor, both windows, the mix) live in
   Fluency Run, deliberately a stretch goal rather than a gate.
 - **MA.1.NSO.2.1 / MA.2.NSO.2.1** put addition and subtraction automaticity in grades 1–2,
   which is why those galaxies get the same per-minute bar in a shorter window.
-- Florida states no facts-per-minute figure anywhere; 21 and 30 come from the fluency
+- Florida states no facts-per-minute figure anywhere; 16 and 24 are derived from the fluency
   research, not from the standard.
 
 ### Adaptive practice (spaced repetition)
