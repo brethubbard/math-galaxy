@@ -130,10 +130,11 @@ Clearing a planet proves *procedural reliability*. The last two stars are about
 - A fixed timed window — **3 min** for multiplication, **2 min** for + and −, the shorter
   window keeping fatigue from masquerading as slowness in younger children.
 - Scored as **correct facts per minute against a wall clock**, the same thing a teacher's
-  timed fact sheet measures: **16/min → ★4**, **21/min → ★5**. ★4 (~3.75s per fact,
-  pauses included) is one step past the 4s clearing bar; ★5 is the ~3s retrieval boundary.
-  The research's ~2s automaticity criterion (30/min) is left as a personal-best target
-  rather than a star, so the top star stays reachable.
+  timed fact sheet measures: **16/min → ★4**, **24/min → ★5**. The research's ~2s
+  automaticity criterion is for *spoken* answers; on the keypad, tapping 2 digits + Enter
+  (~0.8–1s for a child) and the 250ms post-answer pause also come out of the clock, so a
+  child who is automatic by that standard lands around 21–26/min. ★5 sits at the strict
+  end of that range (2.5s per fact). ★4 (~3.75s per fact) is one step past the 4s clearing bar.
 - **Speed alone earns nothing.** A run must clear **90% accuracy** *and* 90% on the current
   planet's own facts — so a child can't coast on easy review facts while missing the new ones.
   Speed and accuracy are reported as one result, because either alone is meaningless.
@@ -162,7 +163,7 @@ All six numbers (both rates, the accuracy floor, both windows, the mix) live in
   Fluency Run, deliberately a stretch goal rather than a gate.
 - **MA.1.NSO.2.1 / MA.2.NSO.2.1** put addition and subtraction automaticity in grades 1–2,
   which is why those galaxies get the same per-minute bar in a shorter window.
-- Florida states no facts-per-minute figure anywhere; 16 and 21 come from the fluency
+- Florida states no facts-per-minute figure anywhere; 16 and 24 are derived from the fluency
   research, not from the standard.
 
 ### Adaptive practice (spaced repetition)
